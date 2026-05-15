@@ -16,5 +16,5 @@ for (const [token, value] of Object.entries(replacements)) {
 }
 
 fs.mkdirSync('dist', { recursive: true });
-fs.writeFileSync('dist/index.html', html);
+fs.writeFileSync('dist/placement_prep_tracker.html', html);
 console.log('Build complete → dist/index.html');    
