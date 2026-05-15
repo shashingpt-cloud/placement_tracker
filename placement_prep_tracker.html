@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PrepTrack — Placement Prep</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#060608;--surface:#0d0d12;--card:#111118;--card2:#16161f;--border:#1e1e2e;--border2:#2a2a3a;
+  --accent:#6c63ff;--accent-glow:rgba(108,99,255,.25);
+  --teal:#00d9c0;--orange:#ffb347;--red:#ff5f6d;--green:#00d9c0;
+  --text:#eeeef5;--muted:#7777aa;--dim:#3a3a55;
+  --font:'Space Grotesk',sans-serif;--mono:'JetBrains Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden}
+
+/* ── NOISE OVERLAY ── */
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.4}
+
+/* ── SCREENS ── */
+.screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;padding:1rem}
+#screen-loading{background:var(--bg);flex-direction:column;gap:.8rem}
+#screen-auth{background:var(--bg)}
+#screen-lc{background:var(--bg)}
+#screen-loading .spinner{width:32px;height:32px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.screen-text{font-size:.8rem;color:var(--muted);font-family:var(--mono)}
+
+/* ── AUTH CARD ── */
+.auth-card{background:var(--card);border:1px solid var(--border2);border-radius:20px;padding:2rem;width:100%;max-width:400px;position:relative;overflow:hidden}
+.auth-card::before{content:'';position:absolute;top:-60px;right:-60px;width:180px;height:180px;background:var(--accent-glow);border-radius:50%;filter:blur(60px);pointer-events:none}
+.auth-logo{font-size:1.8rem;font-weight:700;letter-spacing:-.04em;margin-bottom:.3rem}
+.auth-logo span{color:var(--accent)}
+.auth-sub{font-size:.78rem;color:var(--muted);margin-bottom:1.8rem}
+.auth-tabs{display:flex;gap:.5rem;margin-bottom:1.5rem}
+.auth-tab{flex:1;padding:.5rem;border-radius:8px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:var(--font);font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s}
+.auth-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.form-field{margin-bottom:1rem}
+.form-field label{display:block;font-size:.72rem;color:var(--muted);margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.form-field input{width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:.7rem 1rem;color:var(--text);font-family:var(--font);font-size:.9rem;outline:none;transition:border .2s}
+.form-field input:focus{border-color:var(--accent)}
+.form-field input::placeholder{color:var(--dim)}
+.btn-primary{width:100%;padding:.8rem;background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:var(--font);font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;margin-top:.5rem;letter-spacing:.01em}
+.btn-primary:hover{opacity:.88;transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.auth-err{font-size:.75rem;color:var(--red);margin-top:.5rem;text-align:center;min-height:1rem}
+.firebase-note{font-size:.7rem;color:var(--dim);text-align:center;margin-top:.8rem;line-height:1.6}
+.firebase-note a{color:var(--accent);text-decoration:none}
+
+/* ── LC SETUP CARD ── */
+.lc-card{background:var(--card);border:1px solid var(--border2);border-radius:20px;padding:2rem;width:100%;max-width:420px}
+.lc-card h2{font-size:1.3rem;font-weight:700;margin-bottom:.3rem}
+.lc-card p{font-size:.8rem;color:var(--muted);margin-bottom:1.5rem;line-height:1.6}
+.lc-preview{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.6rem}
+.lc-preview .lc-icon{font-size:1.2rem}
+.skip-link{display:block;text-align:center;font-size:.75rem;color:var(--muted);margin-top:.8rem;cursor:pointer;text-decoration:underline}
+.skip-link:hover{color:var(--text)}
+
+/* ── MAIN APP ── */
+#app{display:none;min-height:100vh;position:relative;z-index:1}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.5rem;border-bottom:1px solid var(--border);background:rgba(6,6,8,.9);backdrop-filter:blur(12px);position:sticky;top:0;z-index:100}
+.topbar-brand{font-size:1rem;font-weight:700;letter-spacing:-.02em;color:var(--text)}
+.topbar-brand span{color:var(--accent)}
+.topbar-right{display:flex;align-items:center;gap:.6rem}
+.tb-chip{display:flex;align-items:center;gap:.4rem;background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:.35rem .8rem;font-size:.75rem;cursor:pointer;transition:all .2s}
+.tb-chip:hover{border-color:var(--accent)}
+.tb-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--dim)}
+.tb-chip .dot.live{background:var(--teal)}
+.tb-chip .dot.err{background:var(--red)}
+.user-chip{gap:.5rem}
+.user-avatar{width:22px;height:22px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff}
+.logout-btn{background:transparent;border:1px solid var(--border2);border-radius:8px;padding:.35rem .7rem;color:var(--muted);font-family:var(--font);font-size:.72rem;cursor:pointer;transition:all .2s}
+.logout-btn:hover{border-color:var(--red);color:var(--red)}
+
+/* ── MAIN GRID ── */
+.main-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;padding:1rem;max-width:1400px;margin:0 auto}
+@media(max-width:900px){.main-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.main-grid{grid-template-columns:1fr}}
+
+/* ── STATS ROW ── */
+.stats-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem}
+@media(max-width:600px){.stats-row{grid-template-columns:1fr 1fr}}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem;position:relative;overflow:hidden}
+.stat-card::after{content:'';position:absolute;bottom:-20px;right:-20px;width:70px;height:70px;border-radius:50%;opacity:.12;filter:blur(20px)}
+.stat-card.s-streak::after{background:var(--orange)}
+.stat-card.s-apt::after{background:var(--accent)}
+.stat-card.s-dsa::after{background:var(--teal)}
+.stat-card.s-lc::after{background:var(--orange)}
+.stat-val{font-size:2rem;font-weight:700;font-family:var(--mono);line-height:1}
+.stat-label{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:.3rem}
+.streak-bar{grid-column:1/-1;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem}
+.streak-title{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.6rem;font-weight:600}
+.streak-dots{display:flex;gap:3px;flex-wrap:wrap}
+.sd{width:11px;height:11px;border-radius:3px;background:var(--border2)}
+.sd.on{background:var(--teal)}
+.sd.today{outline:2px solid var(--accent);outline-offset:1px}
+
+/* ── PANEL ── */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.panel-head{padding:.85rem 1.1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.ph-left{display:flex;flex-direction:column;gap:.1rem}
+.ph-title{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+.ph-sub{font-size:.65rem;color:var(--muted)}
+.ph-right{font-size:.72rem;color:var(--muted);font-family:var(--mono);white-space:nowrap}
+.prog-bar{height:3px;background:var(--border2)}
+.prog-fill{height:100%;transition:width .5s cubic-bezier(.4,0,.2,1)}
+.pf-apt{background:var(--accent)}
+.pf-dsa{background:var(--teal)}
+.pf-lc{background:var(--orange)}
+.p-accent-apt{border-top:2px solid var(--accent)}
+.p-accent-dsa{border-top:2px solid var(--teal)}
+.p-accent-lc{border-top:2px solid var(--orange)}
+
+/* ── WEEK NAV ── */
+.wk-nav{display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-bottom:1px solid var(--border)}
+.wk-btn{background:transparent;border:1px solid var(--border2);border-radius:6px;padding:.25rem .6rem;color:var(--muted);cursor:pointer;font-size:.75rem;font-family:var(--font);transition:all .2s}
+.wk-btn:hover{border-color:var(--accent);color:var(--accent)}
+.wk-label{flex:1;text-align:center;font-size:.8rem;font-weight:600}
+
+/* ── DAY TABS ── */
+.day-tabs{display:flex;gap:.4rem;padding:.7rem 1rem;border-bottom:1px solid var(--border);overflow-x:auto}
+.day-tab{padding:.3rem .7rem;border-radius:6px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:var(--font);transition:all .2s;white-space:nowrap}
+.day-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.day-tab.done{border-color:var(--teal);color:var(--teal)}
+.day-tab.active.done{background:var(--teal);border-color:var(--teal);color:#000}
+
+/* ── CHECKLIST ── */
+.panel-body{padding:.8rem 1rem;flex:1;overflow-y:auto;max-height:380px}
+.check-item{display:flex;align-items:flex-start;gap:.65rem;padding:.5rem 0;border-bottom:1px solid var(--border);cursor:pointer;transition:opacity .15s;-webkit-user-select:none;user-select:none}
+.check-item:last-child{border-bottom:none}
+.check-item:hover{opacity:.8}
+.check-item.done .ci-label{text-decoration:line-through;color:var(--dim)}
+.ci-box{width:17px;height:17px;min-width:17px;border:1.5px solid var(--border2);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .2s;margin-top:2px}
+.check-item.done .ci-box{background:var(--teal);border-color:var(--teal)}
+.check-item.done.apt .ci-box{background:var(--accent);border-color:var(--accent)}
+.ci-tick{display:none;width:9px;height:9px}
+.check-item.done .ci-tick{display:block}
+.ci-label{font-size:.8rem;line-height:1.4;color:var(--text)}
+.ci-sub{font-size:.68rem;color:var(--muted);margin-top:1px}
+.type-tag{font-size:.62rem;padding:.1rem .35rem;border-radius:4px;background:var(--surface);color:var(--muted);font-family:var(--mono)}
+.all-done-banner{background:rgba(0,217,192,.07);border:1px solid rgba(0,217,192,.3);border-radius:8px;padding:.5rem .8rem;font-size:.75rem;color:var(--teal);text-align:center;margin-bottom:.6rem}
+.empty-msg{font-size:.78rem;color:var(--dim);text-align:center;padding:.8rem 0}
+
+/* ── LC PANEL ── */
+.lc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.8rem}
+.lc-stat{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem;text-align:center}
+.lc-stat .n{font-size:1.4rem;font-weight:700;font-family:var(--mono)}
+.lc-stat .l{font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.lc-stat.easy .n{color:var(--teal)}
+.lc-stat.med .n{color:var(--orange)}
+.lc-stat.hard .n{color:var(--red)}
+.lc-user-row{text-align:center;font-size:.75rem;color:var(--muted);margin-bottom:.6rem;display:flex;align-items:center;justify-content:center;gap:.4rem}
+.lc-refresh{width:100%;padding:.55rem;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--muted);font-family:var(--font);font-size:.75rem;cursor:pointer;transition:all .2s}
+.lc-refresh:hover{border-color:var(--orange);color:var(--orange)}
+
+/* ── AI PROBLEM GENERATOR ── */
+.ai-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;border-top:2px solid var(--accent)}
+.ai-head{padding:.85rem 1.1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.ai-title{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+.ai-badge{font-size:.6rem;background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.3);color:var(--accent);border-radius:4px;padding:.1rem .4rem;font-family:var(--mono)}
+.ai-controls{padding:.8rem 1rem;border-bottom:1px solid var(--border);display:flex;gap:.5rem;flex-wrap:wrap}
+.ai-select{background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:.4rem .7rem;color:var(--text);font-family:var(--font);font-size:.78rem;outline:none;cursor:pointer}
+.ai-select:focus{border-color:var(--accent)}
+.ai-gen-btn{padding:.4rem .9rem;background:var(--accent);border:none;border-radius:8px;color:#fff;font-family:var(--font);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:.4rem}
+.ai-gen-btn:hover{opacity:.85}
+.ai-gen-btn:disabled{opacity:.5;cursor:not-allowed}
+.ai-output{padding:.8rem 1rem;font-size:.78rem;line-height:1.6;color:var(--text);max-height:320px;overflow-y:auto;font-family:var(--mono)}
+.ai-placeholder{color:var(--dim);text-align:center;padding:1.5rem;font-size:.75rem}
+.ai-typing{display:inline-block;width:8px;height:14px;background:var(--accent);animation:blink .7s infinite;margin-left:2px;border-radius:1px;vertical-align:text-bottom}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.prob-block{background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:.7rem .9rem;margin-bottom:.6rem}
+.prob-num{font-size:.65rem;color:var(--accent);font-weight:700;margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.06em}
+.prob-q{color:var(--text);font-size:.8rem;line-height:1.5;font-family:var(--font)}
+.prob-hint{font-size:.7rem;color:var(--muted);margin-top:.4rem;border-top:1px solid var(--border);padding-top:.4rem}
+.prob-tag{display:inline-block;font-size:.6rem;background:rgba(0,217,192,.1);border:1px solid rgba(0,217,192,.25);color:var(--teal);border-radius:4px;padding:.1rem .35rem;margin-top:.3rem;margin-right:.3rem;font-family:var(--mono)}
+
+/* ── PROGRESS SECTION ── */
+.prog-section{grid-column:1/-1;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem;border-top:2px solid var(--orange)}
+.prog-section-title{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.8rem;font-weight:600}
+.lc-big-prog{margin-bottom:.5rem}
+.lc-prog-label{display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);margin-bottom:.3rem;font-family:var(--mono)}
+.today-targets{margin-top:.8rem}
+.tt-title{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem;font-weight:600}
+.tt-item{font-size:.75rem;color:var(--muted);padding:.3rem 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.tt-item:last-child{border-bottom:none}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:1.2rem;right:1.2rem;background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:.7rem 1.1rem;font-size:.78rem;z-index:999;transform:translateY(60px);opacity:0;transition:all .25s;max-width:280px}
+.toast.show{transform:translateY(0);opacity:1}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(6,6,8,.85);backdrop-filter:blur(4px);z-index:50;display:none;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--border2);border-radius:16px;padding:1.5rem;width:100%;max-width:380px}
+.modal h3{font-size:1rem;font-weight:700;margin-bottom:.3rem}
+.modal p{font-size:.78rem;color:var(--muted);margin-bottom:1rem;line-height:1.5}
+.modal-btns{display:flex;gap:.5rem}
+.modal-btns button{flex:1;padding:.65rem;border-radius:8px;font-family:var(--font);font-size:.82rem;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:transparent;color:var(--muted);transition:all .2s}
+.modal-btns .btn-danger{background:var(--red);border-color:var(--red);color:#fff}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="screen-loading" class="screen">
+  <div class="spinner"></div>
+  <div class="screen-text">initializing...</div>
+</div>
+
+<!-- AUTH SCREEN -->
+<div id="screen-auth" class="screen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">Prep<span>Track</span></div>
+    <div class="auth-sub">Your 12-week placement prep companion</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Sign In</button>
+      <button class="auth-tab" id="tab-register" onclick="switchTab('register')">Register</button>
+    </div>
+    <div id="auth-form-login">
+      <div class="form-field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@example.com" onkeydown="if(event.key==='Enter')doLogin()"/>
+      </div>
+      <div class="form-field">
+        <label>Password</label>
+        <input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
+      </div>
+      <button class="btn-primary" id="btn-login" onclick="doLogin()">Sign In →</button>
+    </div>
+    <div id="auth-form-register" style="display:none">
+      <div class="form-field">
+        <label>Email</label>
+        <input type="email" id="reg-email" placeholder="you@example.com"/>
+      </div>
+      <div class="form-field">
+        <label>Password (min 6 chars)</label>
+        <input type="password" id="reg-pass" placeholder="••••••••"/>
+      </div>
+      <button class="btn-primary" id="btn-reg" onclick="doRegister()">Create Account →</button>
+    </div>
+    <div class="auth-err" id="auth-err"></div>
+    <div class="firebase-note">
+      Powered by Firebase Auth — your data is private &amp; synced.<br/>
+      Need a Firebase project? <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com ↗</a><br/>
+      <small style="color:var(--dim)">Replace the firebaseConfig in this file with your own credentials.</small>
+    </div>
+  </div>
+</div>
+
+<!-- LEETCODE SETUP SCREEN -->
+<div id="screen-lc" class="screen" style="display:none">
+  <div class="lc-card">
+    <h2>Connect LeetCode 🔗</h2>
+    <p>Paste your LeetCode profile URL or just your username. Stats auto-sync on every login.</p>
+    <div class="lc-preview">
+      <span class="lc-icon">⚡</span>
+      <div>
+        <div style="margin-bottom:.25rem;color:var(--muted)">Accepts any format:</div>
+        <div style="color:var(--accent);font-family:var(--mono);font-size:.68rem;line-height:1.9">
+          https://leetcode.com/u/7TvIJb5ndZ/<br/>
+          https://leetcode.com/john_doe/<br/>
+          john_doe
+        </div>
+      </div>
+    </div>
+    <div class="form-field" style="margin-top:.8rem">
+      <label>LeetCode Profile URL or Username</label>
+      <input type="text" id="lc-setup-input" placeholder="https://leetcode.com/u/7TvIJb5ndZ/" onkeydown="if(event.key==='Enter')saveLcAndContinue()"/>
+    </div>
+    <div id="lc-setup-status" style="font-size:.72rem;color:var(--muted);min-height:1.1rem;margin-bottom:.4rem;text-align:center"></div>
+    <button class="btn-primary" id="btn-lc-save" onclick="saveLcAndContinue()">Verify &amp; Start Tracking →</button>
+    <span class="skip-link" onclick="skipLc()">Skip for now</span>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-brand">Prep<span>Track</span></div>
+    <div class="topbar-right">
+      <div class="tb-chip" onclick="refreshLC()" title="LeetCode Stats">
+        <div class="dot" id="lc-dot"></div>
+        <span id="lc-topbar-name">LeetCode</span>
+      </div>
+      <div class="tb-chip user-chip" id="user-chip">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-email-label">—</span>
+      </div>
+      <button class="logout-btn" onclick="doLogout()">Sign out</button>
+    </div>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- STATS ROW -->
+    <div class="stats-row">
+      <div class="stat-card s-streak">
+        <div class="stat-val" id="stat-streak" style="color:var(--orange)">0</div>
+        <div class="stat-label">Day Streak 🔥</div>
+      </div>
+      <div class="stat-card s-apt">
+        <div class="stat-val" id="stat-apt" style="color:var(--accent)">0%</div>
+        <div class="stat-label">Aptitude Done</div>
+      </div>
+      <div class="stat-card s-dsa">
+        <div class="stat-val" id="stat-dsa" style="color:var(--teal)">0%</div>
+        <div class="stat-label">DSA Done</div>
+      </div>
+      <div class="stat-card s-lc">
+        <div class="stat-val" id="stat-lc" style="color:var(--orange)">0</div>
+        <div class="stat-label">LC Solved</div>
+      </div>
+    </div>
+
+    <!-- STREAK BAR -->
+    <div class="streak-bar" style="grid-column:1/-1">
+      <div class="streak-title">Activity — Last 30 Days</div>
+      <div class="streak-dots" id="streak-dots"></div>
+    </div>
+
+    <!-- APTITUDE PANEL -->
+    <div class="panel p-accent-apt">
+      <div class="panel-head">
+        <div class="ph-left">
+          <div class="ph-title" style="color:var(--accent)">Aptitude</div>
+          <div class="ph-sub">Daily Topics</div>
+        </div>
+        <div class="ph-right" id="apt-prog-label">0/0</div>
+      </div>
+      <div class="prog-bar"><div class="prog-fill pf-apt" id="apt-prog" style="width:0%"></div></div>
+      <div class="wk-nav">
+        <button class="wk-btn" onclick="changeAptWeek(-1)">←</button>
+        <div class="wk-label" id="apt-week-label">Week 1</div>
+        <button class="wk-btn" onclick="changeAptWeek(1)">→</button>
+      </div>
+      <div class="day-tabs" id="apt-day-tabs"></div>
+      <div class="panel-body" id="apt-list"></div>
+    </div>
+
+    <!-- DSA PANEL -->
+    <div class="panel p-accent-dsa">
+      <div class="panel-head">
+        <div class="ph-left">
+          <div class="ph-title" style="color:var(--teal)">DSA</div>
+          <div class="ph-sub">Striver A2Z</div>
+        </div>
+        <div class="ph-right" id="dsa-prog-label">0/0</div>
+      </div>
+      <div class="prog-bar"><div class="prog-fill pf-dsa" id="dsa-prog" style="width:0%"></div></div>
+      <div class="wk-nav">
+        <button class="wk-btn" onclick="changeDsaWeek(-1)">←</button>
+        <div class="wk-label" id="dsa-week-label">Week 1</div>
+        <button class="wk-btn" onclick="changeDsaWeek(1)">→</button>
+      </div>
+      <div class="day-tabs" id="dsa-day-tabs"></div>
+      <div class="panel-body" id="dsa-list"></div>
+    </div>
+
+    <!-- LC STATS PANEL -->
+    <div class="panel p-accent-lc">
+      <div class="panel-head">
+        <div class="ph-left">
+          <div class="ph-title" style="color:var(--orange)">LeetCode</div>
+          <div class="ph-sub">Live Stats</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <!-- user row -->
+        <div class="lc-user-row">
+          <div class="dot" id="lc-status-dot" style="width:7px;height:7px;border-radius:50%;background:var(--dim)"></div>
+          <span id="lc-user-disp">Not connected</span>
+          <span onclick="promptChangeLc()" style="font-size:.65rem;color:var(--accent);cursor:pointer;margin-left:.3rem">change</span>
+        </div>
+        <!-- solved grid -->
+        <div class="lc-grid">
+          <div class="lc-stat easy"><div class="n" id="lc-easy">—</div><div class="l">Easy</div></div>
+          <div class="lc-stat med"><div class="n" id="lc-med">—</div><div class="l">Med</div></div>
+          <div class="lc-stat hard"><div class="n" id="lc-hard">—</div><div class="l">Hard</div></div>
+        </div>
+        <!-- rank + acceptance -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.6rem">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.5rem .7rem;text-align:center">
+            <div style="font-size:.95rem;font-weight:700;font-family:var(--mono);color:var(--orange)" id="lc-ranking">—</div>
+            <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Global Rank</div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.5rem .7rem;text-align:center">
+            <div style="font-size:.95rem;font-weight:700;font-family:var(--mono);color:var(--accent)" id="lc-acceptance">—</div>
+            <div style="font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Acceptance</div>
+          </div>
+        </div>
+        <!-- recent submissions -->
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.55rem .8rem;margin-bottom:.6rem">
+          <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem;font-weight:600">Recent Submissions</div>
+          <div id="lc-recent-list" style="font-size:.72rem;color:var(--dim)">No data yet</div>
+        </div>
+        <button class="lc-refresh" id="lc-refresh" onclick="refreshLC()">↻ Refresh Stats</button>
+        <!-- total + per-difficulty bars -->
+        <div style="margin-top:.6rem;padding:.7rem;background:var(--surface);border-radius:8px">
+          <div class="lc-big-prog">
+            <div class="lc-prog-label">
+              <span>Total Solved</span>
+              <span id="lc-total-label">0 / 150</span>
+            </div>
+            <div class="prog-bar" style="border-radius:2px">
+              <div class="prog-fill pf-lc" id="lc-total-prog" style="width:0%;transition:width .5s"></div>
+            </div>
+          </div>
+          <div style="margin-top:.5rem;display:flex;flex-direction:column;gap:.3rem">
+            <div style="display:flex;align-items:center;gap:.5rem;font-size:.65rem;color:var(--muted)">
+              <span style="width:28px">Easy</span>
+              <div style="flex:1;height:3px;background:var(--border2);border-radius:2px"><div id="lc-easy-bar" style="height:100%;background:var(--teal);border-radius:2px;width:0%;transition:width .5s"></div></div>
+              <span id="lc-easy-pct" style="width:32px;text-align:right;font-family:var(--mono)">0%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;font-size:.65rem;color:var(--muted)">
+              <span style="width:28px">Med</span>
+              <div style="flex:1;height:3px;background:var(--border2);border-radius:2px"><div id="lc-med-bar" style="height:100%;background:var(--orange);border-radius:2px;width:0%;transition:width .5s"></div></div>
+              <span id="lc-med-pct" style="width:32px;text-align:right;font-family:var(--mono)">0%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;font-size:.65rem;color:var(--muted)">
+              <span style="width:28px">Hard</span>
+              <div style="flex:1;height:3px;background:var(--border2);border-radius:2px"><div id="lc-hard-bar" style="height:100%;background:var(--red);border-radius:2px;width:0%;transition:width .5s"></div></div>
+              <span id="lc-hard-pct" style="width:32px;text-align:right;font-family:var(--mono)">0%</span>
+            </div>
+          </div>
+          <div style="font-size:.62rem;color:var(--dim);margin-top:.4rem;text-align:right" id="lc-last-updated"></div>
+        </div>
+        <div class="today-targets" style="margin-top:.6rem">
+          <div class="tt-title">Today's DSA Targets</div>
+          <div id="lc-today-targets"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI PROBLEM GENERATOR -->
+    <div class="ai-panel" style="grid-column:1/-1">
+      <div class="ai-head">
+        <div class="ai-title">AI Problem Generator</div>
+        <div class="ai-badge">Gemini 2.5 Flash</div>
+      </div>
+      <div class="ai-controls">
+        <select class="ai-select" id="ai-type">
+          <option value="aptitude">Aptitude Problems</option>
+          <option value="dsa">DSA Problems</option>
+          <option value="mixed">Mixed Set</option>
+        </select>
+        <select class="ai-select" id="ai-topic">
+          <option value="current">Current Topic</option>
+          <option value="Number System">Number System</option>
+          <option value="Percentages">Percentages</option>
+          <option value="Time & Work">Time &amp; Work</option>
+          <option value="Probability">Probability</option>
+          <option value="Arrays">Arrays</option>
+          <option value="Strings">Strings</option>
+          <option value="Binary Search">Binary Search</option>
+          <option value="Linked List">Linked List</option>
+          <option value="Stack & Queue">Stack &amp; Queue</option>
+          <option value="Recursion">Recursion</option>
+          <option value="Greedy">Greedy</option>
+        </select>
+        <select class="ai-select" id="ai-difficulty">
+          <option value="mixed">Mixed Difficulty</option>
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+        <select class="ai-select" id="ai-count">
+          <option value="3">3 Problems</option>
+          <option value="5">5 Problems</option>
+          <option value="8">8 Problems</option>
+        </select>
+        <button class="ai-gen-btn" id="ai-gen-btn" onclick="generateProblems()">
+          <span>✦</span> Generate
+        </button>
+      </div>
+      <div id="ai-output" class="ai-output">
+        <div class="ai-placeholder">✦ Select a topic and click Generate to get personalized problems crafted just for you.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- RESET MODAL -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal">
+    <h3>Reset all data?</h3>
+    <p>This will clear all your progress, checked items, and streak. This cannot be undone.</p>
+    <div class="modal-btns">
+      <button onclick="document.getElementById('reset-modal').classList.remove('show')">Cancel</button>
+      <button class="btn-danger" onclick="doReset()">Reset</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  FIREBASE CONFIG — Replace with your own from Firebase Console
+//  Project Settings → Your Apps → Web → firebaseConfig
+// ═══════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyCvElLX4-ngyU7IWNeSF0U2gnfpkZ9JVXA",
+  authDomain: "say-myname.firebaseapp.com",
+  projectId: "say-myname",
+  storageBucket: "say-myname.firebasestorage.app",
+  messagingSenderId: "743410142476",
+  appId: "1:743410142476:web:ddbb411edd98412d4b0d29",
+  measurementId: "G-EQLNLYNSRZ"
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  GEMINI API KEY — gemini-2.5-flash
+//  https://aistudio.google.com/app/apikey
+// ═══════════════════════════════════════════════════════════════
+const GEMINI_API_KEY = "AIzaSyBPoPJSTBMZvxTwzHBnx_-ja9YUO6ZhHSg";
+
+// ─────────────────────────────────────────────────────────────
+const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
+const WEEKS = 12;
+
+// ═══════════════════════════════════════════════════════════════
+//  DATA
+// ═══════════════════════════════════════════════════════════════
+const APT_ALL = [
+  {w:1,d:1,topic:'Number System',sub:'Divisibility, HCF, LCM',type:'quant'},
+  {w:1,d:1,topic:'Number Series',sub:'Find the missing number',type:'reasoning'},
+  {w:1,d:2,topic:'Simplification',sub:'BODMAS, surds & indices',type:'quant'},
+  {w:1,d:2,topic:'Letter Series',sub:'Pattern-based letter sequences',type:'reasoning'},
+  {w:1,d:3,topic:'Percentages',sub:'Increase/decrease, successive %',type:'quant'},
+  {w:1,d:3,topic:'Syllogisms',sub:'All/Some/No — Venn diagrams',type:'reasoning'},
+  {w:1,d:4,topic:'Profit & Loss',sub:'CP, SP, MP, discount',type:'quant'},
+  {w:1,d:4,topic:'Statement & Conclusion',sub:'Derive conclusions from statements',type:'reasoning'},
+  {w:1,d:5,topic:'Ratio & Proportion',sub:'Direct, inverse, mixture',type:'quant'},
+  {w:1,d:5,topic:'Blood Relations',sub:'Family tree problems',type:'reasoning'},
+  {w:2,d:1,topic:'Time, Speed & Distance',sub:'Relative speed, boats & streams',type:'quant'},
+  {w:2,d:1,topic:'Direction Sense',sub:'N/S/E/W, shadow problems',type:'reasoning'},
+  {w:2,d:2,topic:'Time & Work',sub:'Pipes & cisterns, efficiency',type:'quant'},
+  {w:2,d:2,topic:'Coding–Decoding',sub:'Letter/number shifting patterns',type:'reasoning'},
+  {w:2,d:3,topic:'Averages',sub:'Weighted average, combined mean',type:'quant'},
+  {w:2,d:3,topic:'Analogies',sub:'Word/number/alphabet analogies',type:'reasoning'},
+  {w:2,d:4,topic:'Simple & Compound Interest',sub:'SI vs CI, effective rate',type:'quant'},
+  {w:2,d:4,topic:'Seating Arrangement',sub:'Linear & circular arrangements',type:'reasoning'},
+  {w:2,d:5,topic:'Algebra & Quadratic Equations',sub:'Roots, sum/product of roots',type:'quant'},
+  {w:2,d:5,topic:'Puzzles',sub:'Age, ranking, order puzzles',type:'reasoning'},
+  {w:3,d:1,topic:'Permutation & Combination',sub:'nPr, nCr, circular arrangements',type:'quant'},
+  {w:3,d:1,topic:'Data Sufficiency',sub:'Is data enough to answer?',type:'reasoning'},
+  {w:3,d:2,topic:'Probability',sub:'Classical, conditional, P(A∪B)',type:'quant'},
+  {w:3,d:2,topic:'Reading Comprehension',sub:'1 editorial passage — main idea, tone',type:'verbal'},
+  {w:3,d:3,topic:'Mensuration',sub:'2D area/perimeter, 3D volume',type:'quant'},
+  {w:3,d:3,topic:'Sentence Correction',sub:'Subject-verb agreement, tense',type:'verbal'},
+  {w:3,d:4,topic:'Number System Advanced',sub:'Remainders, cyclicity, last digits',type:'quant'},
+  {w:3,d:4,topic:'Fill in the Blanks',sub:'Vocabulary & grammar-based',type:'verbal'},
+  {w:3,d:5,topic:'Mixed Aptitude Mock',sub:'20 Qs timed — all topics',type:'mock'},
+  {w:3,d:5,topic:'Para Jumbles & Error Spotting',sub:'Reorder sentences, find errors',type:'verbal'},
+  {w:4,d:1,topic:'Quant Revision — Percentage, P&L, Ratio',sub:'50 problems IndiaBIX',type:'review'},
+  {w:4,d:1,topic:'Reasoning Revision — Series, Syllogisms',sub:'30 problems timed',type:'review'},
+  {w:4,d:2,topic:'TCS NQT Aptitude Set 1',sub:'PrepInsta company-specific',type:'company'},
+  {w:4,d:2,topic:'TCS NQT Aptitude Set 2',sub:'PrepInsta company-specific',type:'company'},
+  {w:4,d:3,topic:'Infosys Aptitude Set',sub:'PrepInsta — English + Quant',type:'company'},
+  {w:4,d:3,topic:'Wipro Aptitude Set',sub:'PrepInsta — logical reasoning focus',type:'company'},
+  {w:4,d:4,topic:'Capgemini Aptitude Set',sub:'Cocubes pattern — PrepInsta',type:'company'},
+  {w:4,d:4,topic:'Cognizant Aptitude Set',sub:'AMCAT pattern — PrepInsta',type:'company'},
+  {w:4,d:5,topic:'Full Mock Test 1',sub:'60 min — 60 Qs all sections',type:'mock'},
+  {w:4,d:5,topic:'Error Analysis',sub:'Review mistakes from mock',type:'review'},
+  {w:5,d:1,topic:'Speed Maths — Vedic Tricks',sub:'Squaring, multiplication shortcuts',type:'quant'},
+  {w:5,d:1,topic:'Input-Output Reasoning',sub:'Step-wise machine operations',type:'reasoning'},
+  {w:5,d:2,topic:'Data Interpretation — Tables',sub:'Read and derive from tables',type:'di'},
+  {w:5,d:2,topic:'Data Interpretation — Bar Charts',sub:'Compare bars, % change',type:'di'},
+  {w:5,d:3,topic:'Data Interpretation — Pie Charts',sub:'Central angle, % calculation',type:'di'},
+  {w:5,d:3,topic:'Data Interpretation — Line Graphs',sub:'Trend, growth rate',type:'di'},
+  {w:5,d:4,topic:'Accenture Aptitude Set',sub:'PrepInsta — Cognitive Ability',type:'company'},
+  {w:5,d:4,topic:'L&T Aptitude Set',sub:'PrepInsta pattern',type:'company'},
+  {w:5,d:5,topic:'Full Mock Test 2',sub:'Timed — 60 Qs',type:'mock'},
+  {w:5,d:5,topic:'Vocabulary — Word Power Made Easy Ch. 1–5',sub:'10 words/day review',type:'verbal'},
+  {w:6,d:1,topic:'Advanced Permutation & Combination',sub:'Distribution, derangement',type:'quant'},
+  {w:6,d:1,topic:'Advanced Probability',sub:'Bayes theorem basics',type:'quant'},
+  {w:6,d:2,topic:'Cubes & Dice — Reasoning',sub:'Painted cubes, net diagrams',type:'reasoning'},
+  {w:6,d:2,topic:'Mirror & Water Image',sub:'Visual reasoning — reflections',type:'reasoning'},
+  {w:6,d:3,topic:'HCL Aptitude Set',sub:'PrepInsta',type:'company'},
+  {w:6,d:3,topic:'Hexaware / Mindtree Set',sub:'PrepInsta',type:'company'},
+  {w:6,d:4,topic:'Full Mock Test 3',sub:'60 Qs — 60 min',type:'mock'},
+  {w:6,d:4,topic:'Weak-area Drill',sub:'Revisit lowest-scoring topics',type:'review'},
+  {w:6,d:5,topic:'Critical Reasoning',sub:'Strengthen/weaken arguments, assumptions',type:'reasoning'},
+  {w:6,d:5,topic:'Course of Action',sub:'Choose best response to problem',type:'reasoning'},
+  ...Array.from({length:6},((_,wi)=>DAYS.map((d,di)=>[
+    {w:wi+7,d:di+1,topic:`Daily Aptitude Mock ${wi*5+di+1}`,sub:'30 Qs — 30 min timed, IndiaBIX or PrepInsta',type:'mock'},
+    {w:wi+7,d:di+1,topic:'Review + 10 Vocabulary Words',sub:'Word Power Made Easy',type:'verbal'}
+  ]))).flat(2)
+];
+
+const DSA_ALL = [
+  {w:1,d:1,topic:'Variables, Data Types, I/O',sub:'Print patterns, data type ranges',section:'Basics'},
+  {w:1,d:1,topic:'Conditionals & Loops',sub:'For, while, nested loops — 10 problems',section:'Basics'},
+  {w:1,d:2,topic:'Pattern Printing',sub:'Stars, numbers, alphabets — 15 patterns',section:'Basics'},
+  {w:1,d:2,topic:'Functions & Recursion Intro',sub:'Factorial, fibonacci, sum of digits',section:'Basics'},
+  {w:1,d:3,topic:'Arrays — 1D Basics',sub:'Linear search, reverse, max/min',section:'Arrays'},
+  {w:1,d:3,topic:'Arrays — 2D Basics',sub:'Matrix print, diagonal sum',section:'Arrays'},
+  {w:1,d:4,topic:'Sorting Basics',sub:'Bubble, Selection, Insertion sort',section:'Sorting'},
+  {w:1,d:4,topic:'Merge Sort',sub:'Divide & conquer, O(n log n)',section:'Sorting'},
+  {w:1,d:5,topic:'Quick Sort',sub:'Pivot selection, partition logic',section:'Sorting'},
+  {w:1,d:5,topic:'Count Sort & Radix Sort',sub:'Non-comparison sorts',section:'Sorting'},
+  {w:2,d:1,topic:'Second Largest, Check Sorted',sub:'LC: 1752, 414',section:'Arrays Easy'},
+  {w:2,d:1,topic:'Remove Duplicates, Left Rotate',sub:'LC: 26, 189',section:'Arrays Easy'},
+  {w:2,d:2,topic:'Move Zeroes, Union & Intersection',sub:'LC: 283, 349',section:'Arrays Easy'},
+  {w:2,d:2,topic:'Missing Number, Max Consecutive Ones',sub:'LC: 268, 485',section:'Arrays Easy'},
+  {w:2,d:3,topic:'Leaders in Array, Longest Subarray (sum=k)',sub:'LC: 162, 560',section:'Arrays Medium'},
+  {w:2,d:3,topic:'Best Time to Buy/Sell Stock',sub:'LC: 121, 2149',section:'Arrays Medium'},
+  {w:2,d:4,topic:'Next Permutation, Kadane\'s Algorithm',sub:'LC: 31, 53',section:'Arrays Medium'},
+  {w:2,d:4,topic:'Sort Colors (Dutch Flag), Majority Element',sub:'LC: 75, 169',section:'Arrays Medium'},
+  {w:2,d:5,topic:'Grid Unique Paths, Set Matrix Zeroes',sub:'LC: 62, 73',section:'Arrays Medium'},
+  {w:2,d:5,topic:'Rotate Matrix 90°, Spiral Traversal',sub:'LC: 48, 54',section:'Arrays Hard'},
+  {w:3,d:1,topic:'Binary Search on 1D Array',sub:'LC: 704, 35, 34',section:'Binary Search'},
+  {w:3,d:1,topic:'Floor/Ceil, First/Last Occurrence',sub:'LC: 744, 2529',section:'Binary Search'},
+  {w:3,d:2,topic:'Count Occurrences, Search Insert Position',sub:'LC: 278, 35',section:'Binary Search'},
+  {w:3,d:2,topic:'Peak Element, Min in Rotated Sorted Array',sub:'LC: 162, 153',section:'Binary Search'},
+  {w:3,d:3,topic:'Search in Rotated Sorted Array I & II',sub:'LC: 33, 81',section:'Binary Search'},
+  {w:3,d:3,topic:'Binary Search on 2D Matrix I & II',sub:'LC: 74, 240',section:'Binary Search'},
+  {w:3,d:4,topic:'Kth Missing Positive, Aggressive Cows',sub:'LC: 1539, GFG',section:'Binary Search on Answer'},
+  {w:3,d:4,topic:'Book Allocation, Split Array Largest Sum',sub:'LC: 1011, 410',section:'Binary Search on Answer'},
+  {w:3,d:5,topic:'Median of 2 Sorted Arrays',sub:'LC: 4',section:'Binary Search on Answer'},
+  {w:3,d:5,topic:'Kth Element of 2 Sorted Arrays',sub:'LC analogs',section:'Binary Search 2D'},
+  {w:4,d:1,topic:'Remove Outermost Parentheses, Reverse Words',sub:'LC: 1021, 151',section:'Strings Basic'},
+  {w:4,d:1,topic:'Largest Odd Number, Longest Common Prefix',sub:'LC: 1903, 14',section:'Strings Basic'},
+  {w:4,d:2,topic:'Isomorphic Strings, Check Rotation',sub:'LC: 205, 796',section:'Strings Basic'},
+  {w:4,d:2,topic:'Valid Anagram, Sort Characters by Frequency',sub:'LC: 242, 451',section:'Strings Basic'},
+  {w:4,d:3,topic:'Longest Palindrome (expand center)',sub:'LC: 5, 647',section:'Strings Medium'},
+  {w:4,d:3,topic:'Roman to Integer, atoi',sub:'LC: 13, 8',section:'Strings Medium'},
+  {w:4,d:4,topic:'Count & Say, Compare Version Numbers',sub:'LC: 38, 165',section:'Strings Medium'},
+  {w:4,d:4,topic:'Longest Consecutive Sequence',sub:'LC: 128 — HashMap O(n)',section:'Strings Medium'},
+  {w:4,d:5,topic:'Implement strStr (KMP intro)',sub:'LC: 28',section:'Strings Medium'},
+  {w:4,d:5,topic:'String review + 5 mixed LC problems',sub:'Easy-Medium random',section:'Strings Review'},
+  {w:5,d:1,topic:'Linked List Intro + Array to LL',sub:'Build Node class, traversal',section:'Linked List'},
+  {w:5,d:1,topic:'Insert/Delete at head, tail, kth position',sub:'All 6 operations',section:'Linked List'},
+  {w:5,d:2,topic:'Length of LL, Search, Delete Middle',sub:'LC: 2095',section:'Linked List'},
+  {w:5,d:2,topic:'Reverse LL (iterative + recursive)',sub:'LC: 206',section:'Linked List'},
+  {w:5,d:3,topic:'Detect Cycle (Floyd), Find Start of Cycle',sub:'LC: 141, 142',section:'Linked List Medium'},
+  {w:5,d:3,topic:'Find Length of Cycle, Check Palindrome LL',sub:'LC: 234',section:'Linked List Medium'},
+  {w:5,d:4,topic:'Segregate Odd-Even, Remove Nth from End',sub:'LC: 328, 19',section:'Linked List Medium'},
+  {w:5,d:4,topic:'Add 2 Numbers, Sort LL (merge sort)',sub:'LC: 2, 148',section:'Linked List Medium'},
+  {w:5,d:5,topic:'Rotate LL, Clone LL with Random Ptr',sub:'LC: 61, 138',section:'Linked List Hard'},
+  {w:5,d:5,topic:'Flatten a LL, Merge K Sorted Lists',sub:'LC: 23',section:'Linked List Hard'},
+  {w:6,d:1,topic:'Print Name N times, 1 to N, N to 1',sub:'Recursion basics',section:'Recursion'},
+  {w:6,d:1,topic:'Sum 1 to N, Factorial, Reverse Array',sub:'Parameterized recursion',section:'Recursion'},
+  {w:6,d:2,topic:'Palindrome Check, Fibonacci using Recursion',sub:'LC: 509',section:'Recursion'},
+  {w:6,d:2,topic:'Subsets I & II (power set)',sub:'LC: 78, 90',section:'Recursion Patterns'},
+  {w:6,d:3,topic:'Permutations of String / Array',sub:'LC: 46, 47',section:'Recursion Patterns'},
+  {w:6,d:3,topic:'Combination Sum I & II',sub:'LC: 39, 40',section:'Recursion Patterns'},
+  {w:6,d:4,topic:'Letter Combinations of Phone Number',sub:'LC: 17',section:'Recursion Patterns'},
+  {w:6,d:4,topic:'N-Queens Problem',sub:'LC: 51',section:'Recursion Hard'},
+  {w:6,d:5,topic:'Rat in a Maze, Word Search',sub:'LC: 79',section:'Recursion Hard'},
+  {w:6,d:5,topic:'Sudoku Solver',sub:'LC: 37',section:'Recursion Hard'},
+  {w:7,d:1,topic:'Bit Manipulation Basics',sub:'Check/set/clear/toggle ith bit',section:'Bit Manipulation'},
+  {w:7,d:1,topic:'Swap without temp, Power of 2',sub:'LC: 231',section:'Bit Manipulation'},
+  {w:7,d:2,topic:'Count Set Bits, Reverse Bits',sub:'LC: 191, 190',section:'Bit Manipulation'},
+  {w:7,d:2,topic:'Single Number I, II, III',sub:'LC: 136, 137, 260',section:'Bit Manipulation'},
+  {w:7,d:3,topic:'XOR of L to R, Power Set using Bits',sub:'LC: 78 bit version',section:'Bit Manipulation'},
+  {w:7,d:3,topic:'Divide Two Integers (no / or *)',sub:'LC: 29',section:'Bit Manipulation'},
+  {w:7,d:4,topic:'Missing & Repeating Number',sub:'XOR approach',section:'Bit Manipulation'},
+  {w:7,d:4,topic:'Count primes using Sieve',sub:'LC: 204',section:'Bit Manipulation'},
+  {w:7,d:5,topic:'Bit Manipulation revision + 5 mixed',sub:'LC random easy-medium',section:'Bit Manipulation Review'},
+  {w:7,d:5,topic:'Stack — Implementation using array & LL',sub:'Push, pop, peek',section:'Stack & Queue Intro'},
+  {w:8,d:1,topic:'Queue — Implementation, Circular Queue',sub:'Enqueue, dequeue',section:'Stack & Queue'},
+  {w:8,d:1,topic:'Stack using Queues / Queue using Stacks',sub:'LC: 225, 232',section:'Stack & Queue'},
+  {w:8,d:2,topic:'Valid Parentheses, Minimum Stack',sub:'LC: 20, 155',section:'Stack & Queue'},
+  {w:8,d:2,topic:'Next Greater Element I & II',sub:'LC: 496, 503',section:'Stack & Queue Medium'},
+  {w:8,d:3,topic:'Next Smaller Element, Asteroid Collision',sub:'LC: 735',section:'Stack & Queue Medium'},
+  {w:8,d:3,topic:'Sum of Subarray Minimums, Remove K Digits',sub:'LC: 907, 402',section:'Stack & Queue Medium'},
+  {w:8,d:4,topic:'Largest Rectangle in Histogram',sub:'LC: 84',section:'Stack Hard'},
+  {w:8,d:4,topic:'Maximal Rectangle in Binary Matrix',sub:'LC: 85',section:'Stack Hard'},
+  {w:8,d:5,topic:'Sliding Window Maximum (Deque)',sub:'LC: 239',section:'Queue Monotonic'},
+  {w:8,d:5,topic:'LRU Cache (Deque + HashMap)',sub:'LC: 146',section:'Queue Hard'},
+  {w:9,d:1,topic:'Two Pointer — Pair Sum, 3Sum, 4Sum',sub:'LC: 167, 15, 18',section:'Two Pointer'},
+  {w:9,d:1,topic:'Container with Most Water, Trapping Rain Water',sub:'LC: 11, 42',section:'Two Pointer'},
+  {w:9,d:2,topic:'Longest Substring Without Repeating Chars',sub:'LC: 3',section:'Sliding Window'},
+  {w:9,d:2,topic:'Max Consecutive Ones III, Fruits into Baskets',sub:'LC: 1004, 904',section:'Sliding Window'},
+  {w:9,d:3,topic:'Longest Substring with K Distinct Chars',sub:'LC: 340 analog',section:'Sliding Window'},
+  {w:9,d:3,topic:'Minimum Window Substring, Permutation in String',sub:'LC: 76, 567',section:'Sliding Window Hard'},
+  {w:9,d:4,topic:'Heaps Intro — Min Heap, Max Heap',sub:'Build, insert, extract',section:'Heaps'},
+  {w:9,d:4,topic:'Kth Largest Element, Top K Frequent Elements',sub:'LC: 215, 347',section:'Heaps'},
+  {w:9,d:5,topic:'Find Median from Data Stream',sub:'LC: 295',section:'Heaps Hard'},
+  {w:9,d:5,topic:'Task Scheduler, Reorganize String',sub:'LC: 621, 767',section:'Heaps Hard'},
+  {w:10,d:1,topic:'Assign Cookies, Jump Game I',sub:'LC: 455, 55',section:'Greedy Easy'},
+  {w:10,d:1,topic:'Jump Game II, Gas Station',sub:'LC: 45, 134',section:'Greedy Easy'},
+  {w:10,d:2,topic:'Candy Distribution, Lemonade Change',sub:'LC: 135, 860',section:'Greedy Easy'},
+  {w:10,d:2,topic:'Valid Parenthesis String, Minimum Platforms',sub:'LC: 678, GFG',section:'Greedy Medium'},
+  {w:10,d:3,topic:'Job Sequencing, Fractional Knapsack',sub:'GFG classics',section:'Greedy Medium'},
+  {w:10,d:3,topic:'N Meetings in One Room (Activity Selection)',sub:'GFG',section:'Greedy Medium'},
+  {w:10,d:4,topic:'Minimum Coins, Merge Overlapping Intervals',sub:'LC: 56',section:'Greedy Medium'},
+  {w:10,d:4,topic:'Insert Interval, Non-overlapping Intervals',sub:'LC: 57, 435',section:'Greedy Medium'},
+  {w:10,d:5,topic:'Greedy revision + 5 mixed problems',sub:'LC medium random',section:'Greedy Review'},
+  {w:10,d:5,topic:'Hashing — HashMap patterns, Two Sum',sub:'LC: 1, 560, 930',section:'Hashing'},
+  ...DAYS.flatMap((d,di)=>[
+    {w:11,d:di+1,topic:`DSA Revision Mock ${di+1}`,sub:'5 LC problems mixed — 90 min timed',section:'Review'},
+    {w:11,d:di+1,topic:'Weak topic drill',sub:'Pick 1 weak section and do 3 problems',section:'Review'}
+  ]),
+  ...DAYS.flatMap((d,di)=>[
+    {w:12,d:di+1,topic:`Full DSA Mock ${di+1}`,sub:'Interview-style: 2 medium + 1 easy in 60 min',section:'Final Sprint'},
+    {w:12,d:di+1,topic:'Blind 75 review',sub:'Revise unseen Blind 75 problems',section:'Final Sprint'}
+  ])
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+let state = {
+  aptWeek:1, aptDay:1, dsaWeek:1, dsaDay:1,
+  checked:{}, days:{}, lcStats:null
+};
+let db = null, auth = null, currentUser = null, userLcId = null;
+
+// ═══════════════════════════════════════════════════════════════
+//  FIREBASE INIT
+// ═══════════════════════════════════════════════════════════════
+function initFirebase(){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    return true;
+  } catch(e){
+    console.warn('Firebase init failed:', e);
+    return false;
+  }
+}
+
+// ─── AUTH ─────────────────────────────────────────────────────
+function switchTab(tab){
+  document.getElementById('tab-login').classList.toggle('active', tab==='login');
+  document.getElementById('tab-register').classList.toggle('active', tab==='register');
+  document.getElementById('auth-form-login').style.display = tab==='login'?'block':'none';
+  document.getElementById('auth-form-register').style.display = tab==='register'?'block':'none';
+  document.getElementById('auth-err').textContent = '';
+}
+
+function setAuthErr(msg){ document.getElementById('auth-err').textContent = msg; }
+function setAuthLoading(id, loading){
+  const btn = document.getElementById(id);
+  btn.disabled = loading;
+  btn.textContent = loading ? 'Please wait...' : (id==='btn-login' ? 'Sign In →' : 'Create Account →');
+}
+
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if(!email||!pass){setAuthErr('Please fill in all fields');return;}
+  setAuthLoading('btn-login', true);
+  setAuthErr('');
+  try{
+    await auth.signInWithEmailAndPassword(email, pass);
+  } catch(e){
+    setAuthErr(friendlyAuthError(e.code));
+    setAuthLoading('btn-login', false);
+  }
+}
+
+async function doRegister(){
+  const email = document.getElementById('reg-email').value.trim();
+  const pass = document.getElementById('reg-pass').value;
+  if(!email||!pass){setAuthErr('Please fill in all fields');return;}
+  if(pass.length<6){setAuthErr('Password must be at least 6 characters');return;}
+  setAuthLoading('btn-reg', true);
+  setAuthErr('');
+  try{
+    await auth.createUserWithEmailAndPassword(email, pass);
+  } catch(e){
+    setAuthErr(friendlyAuthError(e.code));
+    setAuthLoading('btn-reg', false);
+  }
+}
+
+function friendlyAuthError(code){
+  const map = {
+    'auth/user-not-found':'No account found with this email.',
+    'auth/wrong-password':'Incorrect password.',
+    'auth/email-already-in-use':'Email already registered. Try signing in.',
+    'auth/invalid-email':'Invalid email address.',
+    'auth/too-many-requests':'Too many attempts. Please try again later.',
+    'auth/network-request-failed':'Network error. Check your connection.',
+    'auth/invalid-credential':'Invalid email or password.'
+  };
+  return map[code] || 'Authentication error. Please try again.';
+}
+
+async function doLogout(){
+  await auth.signOut();
+}
+
+// ─── LC SETUP ─────────────────────────────────────────────────
+
+// Extract username from any LeetCode URL or raw username input
+function extractLcUsername(raw){
+  raw = raw.trim();
+  // Handle full URLs: leetcode.com/u/SHORTID/ or leetcode.com/USERNAME/
+  try {
+    const url = new URL(raw.startsWith('http') ? raw : 'https://' + raw);
+    if(url.hostname.includes('leetcode.com')){
+      const parts = url.pathname.replace(/\/+$/,'').split('/').filter(Boolean);
+      // /u/SHORTID → parts = ['u', 'SHORTID']
+      // /USERNAME  → parts = ['USERNAME']
+      if(parts.length >= 2 && parts[0] === 'u') return parts[1];
+      if(parts.length >= 1) return parts[parts.length - 1];
+    }
+  } catch(e){ /* not a URL, treat as raw username */ }
+  return raw;
+}
+
+function setLcSetupStatus(msg, color='var(--muted)'){
+  const el = document.getElementById('lc-setup-status');
+  if(el){ el.textContent = msg; el.style.color = color; }
+}
+
+async function saveLcAndContinue(){
+  const raw = document.getElementById('lc-setup-input').value.trim();
+  if(!raw){ toast('Please enter your LeetCode profile URL or username'); return; }
+
+  const username = extractLcUsername(raw);
+  if(!username){ toast('Could not extract username — please try again'); return; }
+
+  const btn = document.getElementById('btn-lc-save');
+  btn.disabled = true;
+  btn.textContent = 'Verifying...';
+  setLcSetupStatus('⏳ Checking LeetCode profile...');
+
+  // Try to verify the username resolves
+  const result = await fetchLcStats(username);
+  if(result){
+    userLcId = username;
+    await saveUserProfile({leetcodeId: username});
+    setLcSetupStatus('✓ Connected! Loading your stats...', 'var(--teal)');
+    setTimeout(()=>{ showApp(); renderStats(); }, 600);
+  } else {
+    // Username may be a short ID that proxies don't support — save anyway, let user know
+    setLcSetupStatus('⚠ Could not verify — saved anyway. Try the Refresh button in the app.', 'var(--orange)');
+    userLcId = username;
+    await saveUserProfile({leetcodeId: username});
+    setTimeout(()=>{ showApp(); }, 1200);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Verify & Start Tracking →';
+}
+
+async function skipLc(){
+  showApp();
+}
+
+async function promptChangeLc(){
+  const raw = prompt('Paste your LeetCode profile URL or username:');
+  if(!raw || !raw.trim()) return;
+  const username = extractLcUsername(raw.trim());
+  if(!username){ toast('Could not extract username'); return; }
+  userLcId = username;
+  await saveUserProfile({leetcodeId: username});
+  document.getElementById('lc-user-disp').textContent = '@' + username;
+  document.getElementById('lc-topbar-name').textContent = username;
+  refreshLC();
+  toast('LeetCode ID updated — refreshing stats...');
+}
+
+// ─── FIRESTORE PER-USER ───────────────────────────────────────
+function userDoc(){
+  if(!db || !currentUser) return null;
+  return db.collection('users').doc(currentUser.uid);
+}
+
+async function saveUserProfile(data){
+  const ref = userDoc();
+  if(!ref) return;
+  try{ await ref.set(data, {merge:true}); } catch(e){ console.warn('Profile save error',e); }
+}
+
+async function saveProgress(){
+  const ref = userDoc();
+  if(!ref) return;
+  try{
+    await ref.set({progress: state}, {merge:true});
+  } catch(e){ console.warn('Progress save error',e); }
+}
+
+async function loadUserData(){
+  const ref = userDoc();
+  if(!ref) return;
+  try{
+    const doc = await ref.get();
+    if(doc.exists){
+      const data = doc.data();
+      if(data.progress) state = {...state, ...data.progress};
+      if(data.leetcodeId) userLcId = data.leetcodeId;
+    }
+  } catch(e){ console.warn('Load error',e); }
+}
+
+function persist(){
+  saveProgress();
+}
+
+// ─── AUTH STATE OBSERVER ──────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async ()=>{
+  const fbOk = initFirebase();
+  
+  if(!fbOk){
+    // Firebase not configured — demo mode
+    document.getElementById('screen-loading').style.display = 'none';
+    document.getElementById('screen-auth').style.display = 'flex';
+    toast('Firebase not configured — running in demo mode');
+    return;
+  }
+
+  auth.onAuthStateChanged(async (user)=>{
+    if(user){
+      currentUser = user;
+      document.getElementById('screen-loading').style.display = 'flex';
+      await loadUserData();
+      document.getElementById('screen-loading').style.display = 'none';
+
+      if(!userLcId){
+        document.getElementById('screen-lc').style.display = 'flex';
+      } else {
+        showApp();
+        refreshLC();
+      }
+    } else {
+      currentUser = null;
+      document.getElementById('screen-loading').style.display = 'none';
+      document.getElementById('screen-auth').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+    }
+  });
+});
+
+function showApp(){
+  document.getElementById('screen-auth').style.display = 'none';
+  document.getElementById('screen-lc').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  const email = currentUser?.email || 'demo';
+  const initial = email[0].toUpperCase();
+  document.getElementById('user-avatar').textContent = initial;
+  document.getElementById('user-email-label').textContent = email.split('@')[0];
+  document.getElementById('lc-user-disp').textContent = userLcId ? '@'+userLcId : 'Not connected';
+  document.getElementById('lc-topbar-name').textContent = userLcId || 'LeetCode';
+
+  renderAll();
+
+  // Auto-fetch LC stats on every login, then keep refreshing every 5 min
+  if(userLcId){
+    refreshLC();
+    startLcAutoRefresh();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LEETCODE FETCH — multi-proxy, rich profile data, auto-refresh
+// ═══════════════════════════════════════════════════════════════
+
+// LeetCode total questions (approximate, update periodically)
+const LC_TOTALS = { easy: 852, medium: 1778, hard: 774 };
+
+// Core fetch — tries multiple proxies, returns rich stats object or null
+async function fetchLcStats(username){
+  if(!username) return null;
+
+  // ── Proxy 1: alfa-leetcode-api — /solved + /profile + /submission ──
+  try{
+    const [solvedRes, profileRes, subRes] = await Promise.allSettled([
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`,   { signal: AbortSignal.timeout(10000) }),
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}`,           { signal: AbortSignal.timeout(10000) }),
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}/submission`,{ signal: AbortSignal.timeout(10000) })
+    ]);
+
+    let easy=0, medium=0, hard=0, ranking=null, acceptanceRate=null, recentSubmissions=[];
+
+    // solved counts
+    if(solvedRes.status==='fulfilled' && solvedRes.value.ok){
+      const d = await solvedRes.value.json();
+      if(d.easySolved !== undefined){
+        easy = d.easySolved||0; medium = d.mediumSolved||0; hard = d.hardSolved||0;
+      }
+    }
+
+    // profile info (ranking, acceptance rate)
+    if(profileRes.status==='fulfilled' && profileRes.value.ok){
+      const d = await profileRes.value.json();
+      if(d.ranking) ranking = d.ranking;
+      if(d.acceptanceRate != null) acceptanceRate = parseFloat(d.acceptanceRate).toFixed(1);
+      // fallback solved counts from profile if first call failed
+      if(!easy && d.totalSolved){
+        const ac = d.submitStats?.acSubmissionNum || [];
+        easy   = ac.find(x=>x.difficulty==='Easy')?.count   || 0;
+        medium = ac.find(x=>x.difficulty==='Medium')?.count || 0;
+        hard   = ac.find(x=>x.difficulty==='Hard')?.count   || 0;
+      }
+    }
+
+    // recent submissions
+    if(subRes.status==='fulfilled' && subRes.value.ok){
+      const d = await subRes.value.json();
+      const list = d.submission || d.recentSubmissionList || [];
+      recentSubmissions = list.slice(0,5).map(s=>({
+        title: s.title || s.titleSlug || '—',
+        status: s.statusDisplay || s.status || '—',
+        lang: s.lang || '',
+        time: s.timestamp ? new Date(parseInt(s.timestamp)*1000).toLocaleDateString() : ''
+      }));
+    }
+
+    if(easy || medium || hard){
+      return { easy, medium, hard, total:easy+medium+hard, ranking, acceptanceRate, recentSubmissions };
+    }
+  } catch(e){}
+
+  // ── Proxy 2: leetcode-stats-api.herokuapp.com ──
+  try{
+    const res = await fetch(`https://leetcode-stats-api.herokuapp.com/${username}`, {
+      signal: AbortSignal.timeout(10000)
+    });
+    if(res.ok){
+      const d = await res.json();
+      if(d.status === 'success' || d.easySolved !== undefined){
+        const e = d.easySolved ?? 0;
+        const m = d.mediumSolved ?? 0;
+        const h = d.hardSolved ?? 0;
+        const rate = d.acceptanceRate ? parseFloat(d.acceptanceRate).toFixed(1) : null;
+        const rank = d.ranking || null;
+        return { easy:e, medium:m, hard:h, total:e+m+h, ranking:rank, acceptanceRate:rate, recentSubmissions:[] };
+      }
+    }
+  } catch(e){}
+
+  return null;
+}
+
+// Called on login and on manual refresh — fetches, updates UI + Firestore
+async function refreshLC(){
+  if(!userLcId){
+    setLcDot('dim');
+    return;
+  }
+
+  setLcDot('loading');
+  const btn = document.getElementById('lc-refresh');
+  if(btn) btn.textContent = '⏳ Syncing...';
+
+  const stats = await fetchLcStats(userLcId);
+
+  if(stats){
+    state.lcStats = stats;
+    state.lcStats.fetchedAt = Date.now();
+    setLcDot('live');
+    toast(`✓ Synced — ${stats.total} solved (${stats.easy}E · ${stats.medium}M · ${stats.hard}H)`);
+    persist();
+  } else {
+    setLcDot('err');
+    if(!state.lcStats){
+      toast('⚠ Could not reach LeetCode API. Check username or try later.');
+    } else {
+      toast('Showing cached stats — API temporarily unavailable');
+    }
+  }
+
+  renderStats();
+  renderLcExtras();
+  if(btn) btn.textContent = '↻ Refresh Stats';
+}
+
+// Render ranking, acceptance, mini-bars, recent submissions, last-updated time
+function renderLcExtras(){
+  const s = state.lcStats;
+  if(!s) return;
+
+  // ranking
+  const rankEl = document.getElementById('lc-ranking');
+  if(rankEl) rankEl.textContent = s.ranking ? '#' + Number(s.ranking).toLocaleString() : '—';
+
+  // acceptance rate
+  const accEl = document.getElementById('lc-acceptance');
+  if(accEl) accEl.textContent = s.acceptanceRate ? s.acceptanceRate + '%' : '—';
+
+  // per-difficulty mini bars
+  const pct = (v, tot) => tot ? Math.min(100, Math.round(v/tot*100)) : 0;
+  const ep = pct(s.easy,   LC_TOTALS.easy);
+  const mp = pct(s.medium, LC_TOTALS.medium);
+  const hp = pct(s.hard,   LC_TOTALS.hard);
+  const setBar = (barId, pctId, val) => {
+    const b = document.getElementById(barId); if(b) b.style.width = val + '%';
+    const p = document.getElementById(pctId); if(p) p.textContent = val + '%';
+  };
+  setBar('lc-easy-bar', 'lc-easy-pct', ep);
+  setBar('lc-med-bar',  'lc-med-pct',  mp);
+  setBar('lc-hard-bar', 'lc-hard-pct', hp);
+
+  // recent submissions
+  const recEl = document.getElementById('lc-recent-list');
+  if(recEl){
+    const list = s.recentSubmissions || [];
+    if(!list.length){
+      recEl.innerHTML = '<span style="color:var(--dim)">No recent data</span>';
+    } else {
+      const statusColor = st => {
+        if(/accept/i.test(st)) return 'var(--teal)';
+        if(/wrong/i.test(st))  return 'var(--red)';
+        return 'var(--orange)';
+      };
+      recEl.innerHTML = list.map(s=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.22rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text);font-size:.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">${s.title}</span>
+          <span style="font-size:.65rem;color:${statusColor(s.status)};white-space:nowrap">${s.status}</span>
+          <span style="font-size:.62rem;color:var(--dim);white-space:nowrap">${s.time}</span>
+        </div>`).join('');
+    }
+  }
+
+  // last updated timestamp
+  const lu = document.getElementById('lc-last-updated');
+  if(lu && s.fetchedAt){
+    const d = new Date(s.fetchedAt);
+    lu.textContent = 'Updated ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }
+}
+
+function setLcDot(status){
+  const dot1 = document.getElementById('lc-dot');
+  const dot2 = document.getElementById('lc-status-dot');
+  const colors = { live:'var(--teal)', err:'var(--red)', dim:'var(--dim)', loading:'var(--orange)' };
+  const col = colors[status] || 'var(--dim)';
+  if(dot1){ dot1.style.background = col; dot1.className = 'dot' + (status==='live'?' live':''); }
+  if(dot2) dot2.style.background = col;
+}
+
+// Auto-refresh every 10 minutes while app is open
+let lcAutoRefreshTimer = null;
+function startLcAutoRefresh(){
+  if(lcAutoRefreshTimer) clearInterval(lcAutoRefreshTimer);
+  lcAutoRefreshTimer = setInterval(()=>{
+    if(userLcId && document.getElementById('app').style.display !== 'none'){
+      refreshLC();
+    }
+  }, 10 * 60 * 1000); // 10 minutes
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════
+function renderAll(){
+  renderAptTabs(); renderAptList();
+  renderDsaTabs(); renderDsaList();
+  renderStats(); renderStreak(); renderLcTargets(); renderLcExtras();
+}
+
+function key(type,w,d,i){return `${type}-w${w}d${d}-${i}`}
+function getAptItems(w,d){return APT_ALL.filter(i=>i.w===w&&i.d===d)}
+function getDsaItems(w,d){return DSA_ALL.filter(i=>i.w===w&&i.d===d)}
+function isDayDone(type,w,d){
+  const items = type==='apt'?getAptItems(w,d):getDsaItems(w,d);
+  return items.length && items.every((_,i)=>state.checked[key(type,w,d,i)]);
+}
+
+function renderDayTabs(id, type, wk, day){
+  document.getElementById(id).innerHTML = DAYS.map((n,i)=>{
+    const d=i+1, active=d===day, done=isDayDone(type,wk,d);
+    return `<button class="day-tab${active?' active':''}${done?' done':''}" onclick="setDay('${type}',${d})">${n}${done?' ✓':''}</button>`;
+  }).join('');
+}
+function renderAptTabs(){
+  document.getElementById('apt-week-label').textContent=`Week ${state.aptWeek}`;
+  renderDayTabs('apt-day-tabs','apt',state.aptWeek,state.aptDay);
+}
+function renderDsaTabs(){
+  document.getElementById('dsa-week-label').textContent=`Week ${state.dsaWeek}`;
+  renderDayTabs('dsa-day-tabs','dsa',state.dsaWeek,state.dsaDay);
+}
+function setDay(type,d){
+  if(type==='apt') state.aptDay=d; else state.dsaDay=d;
+  if(type==='apt'){renderAptTabs();renderAptList();} else {renderDsaTabs();renderDsaList();}
+}
+
+const typeColor = {quant:'var(--accent)',reasoning:'var(--teal)',verbal:'var(--orange)',mock:'var(--red)',review:'var(--muted)',company:'#ffb347',di:'var(--teal)',section:'var(--accent)'};
+
+function renderList(containerId, type, items, w, d){
+  const el = document.getElementById(containerId);
+  if(!items.length){el.innerHTML='<div class="empty-msg">No topics for this day yet</div>';return;}
+  const allDone = items.every((_,i)=>state.checked[key(type,w,d,i)]);
+  let html = allDone?'<div class="all-done-banner">✓ All done for today!</div>':'';
+  html += items.map((item,i)=>{
+    const k=key(type,w,d,i), done=!!state.checked[k];
+    const tag = item.type||item.section||'';
+    const col = typeColor[tag]||'var(--muted)';
+    return `<div class="check-item${done?' done'+(type==='apt'?' apt':''):''}" onclick="toggle('${type}',${w},${d},${i})">
+      <div class="ci-box">
+        <svg class="ci-tick" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-5" stroke="${type==='apt'?'#fff':'#000'}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="flex:1">
+        <div class="ci-label">${item.topic}</div>
+        <div class="ci-sub">${item.sub} <span class="type-tag" style="color:${col}">${tag}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+  el.innerHTML = html;
+}
+
+function renderAptList(){
+  const items = getAptItems(state.aptWeek, state.aptDay);
+  const weekItems = APT_ALL.filter(i=>i.w===state.aptWeek);
+  const doneCount = weekItems.filter(item=>{
+    const dayItems = getAptItems(item.w,item.d);
+    const pos = dayItems.indexOf(item);
+    return !!state.checked[key('apt',item.w,item.d,pos)];
+  }).length;
+  const pct = weekItems.length?Math.round(doneCount/weekItems.length*100):0;
+  document.getElementById('apt-prog').style.width=pct+'%';
+  document.getElementById('apt-prog-label').textContent=`${doneCount}/${weekItems.length}`;
+  renderList('apt-list','apt',items,state.aptWeek,state.aptDay);
+}
+
+function renderDsaList(){
+  const items = getDsaItems(state.dsaWeek, state.dsaDay);
+  const weekItems = DSA_ALL.filter(i=>i.w===state.dsaWeek);
+  const doneCount = weekItems.filter(item=>{
+    const dayItems = getDsaItems(item.w,item.d);
+    const pos = dayItems.indexOf(item);
+    return !!state.checked[key('dsa',item.w,item.d,pos)];
+  }).length;
+  const pct = weekItems.length?Math.round(doneCount/weekItems.length*100):0;
+  document.getElementById('dsa-prog').style.width=pct+'%';
+  document.getElementById('dsa-prog-label').textContent=`${doneCount}/${weekItems.length}`;
+  renderList('dsa-list','dsa',items,state.dsaWeek,state.dsaDay);
+}
+
+function renderStats(){
+  const aptDone = APT_ALL.filter(item=>{
+    const d=getAptItems(item.w,item.d), p=d.indexOf(item);
+    return !!state.checked[key('apt',item.w,item.d,p)];
+  }).length;
+  document.getElementById('stat-apt').textContent = Math.round(aptDone/APT_ALL.length*100)+'%';
+
+  const dsaDone = DSA_ALL.filter(item=>{
+    const d=getDsaItems(item.w,item.d), p=d.indexOf(item);
+    return !!state.checked[key('dsa',item.w,item.d,p)];
+  }).length;
+  document.getElementById('stat-dsa').textContent = Math.round(dsaDone/DSA_ALL.length*100)+'%';
+
+  const total = (state.lcStats?.easy||0)+(state.lcStats?.medium||0)+(state.lcStats?.hard||0);
+  document.getElementById('stat-lc').textContent = total;
+  document.getElementById('lc-total-prog').style.width = Math.min(100,Math.round(total/150*100))+'%';
+  document.getElementById('lc-total-label').textContent = `${total} / 150`;
+
+  if(state.lcStats){
+    document.getElementById('lc-easy').textContent = state.lcStats.easy||0;
+    document.getElementById('lc-med').textContent = state.lcStats.medium||0;
+    document.getElementById('lc-hard').textContent = state.lcStats.hard||0;
+  }
+}
+
+function renderStreak(){
+  const today = new Date();
+  const dots = [];
+  let streak = 0;
+  for(let i=29;i>=0;i--){
+    const d=new Date(today); d.setDate(d.getDate()-i);
+    const ds=d.toISOString().split('T')[0];
+    const on=!!state.days[ds]?.done;
+    dots.push(`<div class="sd${on?' on':''}${i===0?' today':''}" title="${ds}"></div>`);
+  }
+  for(let i=0;i<=29;i++){
+    const d=new Date(today); d.setDate(d.getDate()-i);
+    const ds=d.toISOString().split('T')[0];
+    if(state.days[ds]?.done) streak++; else if(i>0) break;
+  }
+  document.getElementById('stat-streak').textContent = streak;
+  document.getElementById('streak-dots').innerHTML = dots.join('');
+}
+
+function renderLcTargets(){
+  const items = getDsaItems(state.dsaWeek, state.dsaDay).slice(0,3);
+  const el = document.getElementById('lc-today-targets');
+  if(!items.length){el.innerHTML='<div class="empty-msg">No targets</div>';return;}
+  el.innerHTML = items.map(i=>`<div class="tt-item"><span>${i.topic}</span><span style="color:var(--dim)">${i.section||''}</span></div>`).join('');
+}
+
+// ─── TOGGLE ───────────────────────────────────────────────────
+function toggle(type,w,d,i){
+  const k=key(type,w,d,i);
+  state.checked[k]=!state.checked[k];
+  const today=new Date().toISOString().split('T')[0];
+  if(!state.days[today]) state.days[today]={};
+  state.days[today].done = Object.values(state.checked).some(v=>v);
+  persist();
+  if(type==='apt'){renderAptList();renderAptTabs();} else {renderDsaList();renderDsaTabs();}
+  renderStats(); renderStreak();
+}
+
+function changeAptWeek(dir){
+  const nw=state.aptWeek+dir;
+  if(nw<1||nw>WEEKS)return;
+  state.aptWeek=nw; state.aptDay=1;
+  renderAptTabs(); renderAptList(); persist();
+}
+function changeDsaWeek(dir){
+  const nw=state.dsaWeek+dir;
+  if(nw<1||nw>WEEKS)return;
+  state.dsaWeek=nw; state.dsaDay=1;
+  renderDsaTabs(); renderDsaList(); persist();
+}
+
+// ─── RESET ────────────────────────────────────────────────────
+async function doReset(){
+  state.checked={}; state.days={}; state.lcStats=null;
+  state.aptWeek=1; state.aptDay=1; state.dsaWeek=1; state.dsaDay=1;
+  await persist();
+  document.getElementById('reset-modal').classList.remove('show');
+  renderAll();
+  toast('Progress reset');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AI PROBLEM GENERATOR (Gemini 2.5 Flash)
+// ═══════════════════════════════════════════════════════════════
+async function generateProblems(){
+  const btn = document.getElementById('ai-gen-btn');
+  const output = document.getElementById('ai-output');
+  const type = document.getElementById('ai-type').value;
+  const topicSel = document.getElementById('ai-topic').value;
+  const diff = document.getElementById('ai-difficulty').value;
+  const count = document.getElementById('ai-count').value;
+
+  // Determine topic
+  let topic = topicSel;
+  if(topicSel === 'current'){
+    if(type === 'aptitude'){
+      const items = getAptItems(state.aptWeek, state.aptDay);
+      topic = items.length ? items[0].topic : 'Quantitative Aptitude';
+    } else {
+      const items = getDsaItems(state.dsaWeek, state.dsaDay);
+      topic = items.length ? items[0].topic : 'Arrays';
+    }
+  }
+
+  const userName = currentUser?.email?.split('@')[0] || 'student';
+  const prompt = buildPrompt(type, topic, diff, parseInt(count), userName);
+
+  btn.disabled = true;
+  output.innerHTML = '<div class="ai-placeholder">✦ Generating problems<span class="ai-typing"></span></div>';
+
+  try{
+    const systemInstruction = `You are a placement preparation expert generating practice problems for engineering students in India preparing for campus placements. Generate problems that match the difficulty of TCS, Infosys, Wipro, Cognizant, Accenture, and similar MNC placement tests. Return ONLY valid JSON — no preamble, no markdown fences, no explanation. Format: {"problems":[{"num":1,"question":"...","hint":"...","tags":["tag1","tag2"],"difficulty":"easy|medium|hard"}]}`;
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+          responseMimeType: 'application/json'
+        }
+      })
+    });
+
+    if(!response.ok){
+      const err = await response.json().catch(()=>({}));
+      throw new Error(err.error?.message || `Gemini API error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if(!text) throw new Error('Empty response from Gemini');
+
+    let parsed;
+    try{
+      const clean = text.replace(/```json|```/g,'').trim();
+      parsed = JSON.parse(clean);
+    } catch(e){
+      throw new Error('Failed to parse Gemini response as JSON');
+    }
+
+    renderProblems(parsed.problems || [], topic, type);
+
+  } catch(e){
+    output.innerHTML = `<div class="ai-placeholder" style="color:var(--red)">✗ Error: ${e.message}<br/><small style="color:var(--dim)">Check your Gemini API key or try again.</small></div>`;
+  }
+  btn.disabled = false;
+}
+
+function buildPrompt(type, topic, diff, count, user){
+  const diffStr = diff === 'mixed' ? 'mixed (some easy, some medium, some hard)' : diff;
+  if(type === 'aptitude'){
+    return `Generate ${count} placement aptitude practice problems on "${topic}" at ${diffStr} difficulty for a student named ${user} preparing for Indian campus placements. Problems should feel authentic to TCS NQT / Infosys / Wipro style. Each problem must have a clear numerical or logical answer. Include concise hints.`;
+  } else if(type === 'dsa'){
+    return `Generate ${count} DSA coding problems on "${topic}" at ${diffStr} difficulty for ${user} preparing for Indian campus placements. Problems should resemble LeetCode easy-medium style. Include problem statement, constraints, and a hint about the approach (no full solution). Keep problems concise and interview-appropriate.`;
+  } else {
+    return `Generate ${count} mixed placement problems for ${user} — half aptitude (quant/reasoning), half DSA coding problems — on the topic "${topic}" at ${diffStr} difficulty. These should match Indian MNC campus placement style.`;
+  }
+}
+
+function renderProblems(problems, topic, type){
+  const output = document.getElementById('ai-output');
+  if(!problems.length){
+    output.innerHTML = '<div class="ai-placeholder">No problems returned. Try again.</div>';
+    return;
+  }
+  const diffColor = {easy:'var(--teal)', medium:'var(--orange)', hard:'var(--red)'};
+  output.innerHTML = problems.map(p=>`
+    <div class="prob-block">
+      <div class="prob-num">Problem ${p.num} · <span style="color:${diffColor[p.difficulty]||'var(--muted)'}">${p.difficulty||''}</span></div>
+      <div class="prob-q">${p.question}</div>
+      ${p.hint?`<div class="prob-hint">💡 Hint: ${p.hint}</div>`:''}
+      ${(p.tags||[]).map(t=>`<span class="prob-tag">${t}</span>`).join('')}
+    </div>
+  `).join('');
+}
+
+// ─── TOAST ────────────────────────────────────────────────────
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>
