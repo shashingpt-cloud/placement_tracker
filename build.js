@@ -1,5 +1,5 @@
 const fs = require('fs');
-let html = fs.readFileSync('index.html', 'utf8');
+let html = fs.readFileSync('placement_prep_tracker.html', 'utf8');
 
 const replacements = {
   '__FIREBASE_API_KEY__':            process.env.FIREBASE_API_KEY,
