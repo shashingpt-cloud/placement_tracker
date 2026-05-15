@@ -1,0 +1,6 @@
+{
+  "name": "preptrack",
+  "scripts": {
+    "build": "node build.js"
+  }
+}
