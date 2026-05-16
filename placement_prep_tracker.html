@@ -1137,7 +1137,7 @@ async function fetchLcStats(username){
       const easy  =ac.find(x=>x.difficulty==='Easy')?.count||0;
       const medium=ac.find(x=>x.difficulty==='Medium')?.count||0;
       const hard  =ac.find(x=>x.difficulty==='Hard')?.count||0;
-      if(ac.length){
+      if(d?.data?.matchedUser){
         const subs=(d?.data?.recentAcSubmissionList||[]).map(s=>({
           title:s.title||'—',
           status:'Accepted',
@@ -1184,7 +1184,7 @@ async function fetchLcStats(username){
         time:s.timestamp?new Date(parseInt(s.timestamp)*1000).toLocaleDateString():''
       }));
     }
-    if(easy||medium||hard) return {easy,medium,hard,total:easy+medium+hard,ranking,acceptanceRate,recentSubmissions};
+    if(easy!==undefined) return {easy,medium,hard,total:easy+medium+hard,ranking,acceptanceRate,recentSubmissions};
   } catch(e){}
 
   // FALLBACK 2: leetcode-stats herokuapp
@@ -1706,6 +1706,7 @@ let friendsList = [
   // Add your 2 extra friends below — just replace the empty strings with usernames
   { username: 'KAVISRIBABU', stats: null, loading: false, error: false },
   { username: 'ShiyalinJohn', stats: null, loading: false, error: false },
+,
 ];
 
 async function fetchFriendStats(username) {
@@ -1726,7 +1727,7 @@ async function fetchFriendStats(username) {
       const easy   = ac.find(x => x.difficulty === 'Easy')?.count   || 0;
       const medium = ac.find(x => x.difficulty === 'Medium')?.count || 0;
       const hard   = ac.find(x => x.difficulty === 'Hard')?.count   || 0;
-      if (ac.length) return { easy, medium, hard, total: easy+medium+hard, ranking: d?.data?.matchedUser?.profile?.ranking || null };
+      if(d?.data?.matchedUser) return { easy, medium, hard, total: easy+medium+hard, ranking: d?.data?.matchedUser?.profile?.ranking || null };
     }
   } catch(e) {}
   try {
