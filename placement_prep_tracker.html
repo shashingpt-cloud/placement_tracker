@@ -604,6 +604,25 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
         </table>
       </div>
     </div>
+
+    <!-- FRIENDS LC TRACKER (Admin) -->
+    <div style="margin-top:1rem;background:var(--card);border:1px solid var(--border);border-top:2px solid var(--accent);border-radius:14px;padding:1rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;flex-wrap:wrap;gap:.5rem">
+        <div>
+          <div style="font-size:.88rem;font-weight:700;color:var(--accent)">Friends LC Tracker</div>
+          <div style="font-size:.65rem;color:var(--muted);margin-top:.1rem">Live LeetCode stats — sorted by total solved</div>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+          <input id="friend-add-input" type="text" placeholder="Paste LeetCode URL..." style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:.72rem;padding:.35rem .65rem;border-radius:7px;outline:none;font-family:var(--mono);width:220px"/>
+          <button onclick="addFriend()" style="background:var(--accent);color:#fff;border:none;font-size:.72rem;padding:.38rem .8rem;border-radius:7px;cursor:pointer;font-weight:600">+ Add</button>
+          <button onclick="refreshAllFriends()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:.72rem;padding:.38rem .8rem;border-radius:7px;cursor:pointer">↻ Refresh All</button>
+        </div>
+      </div>
+      <div id="friends-grid" style="display:flex;flex-direction:column;gap:.5rem">
+        <div style="font-size:.75rem;color:var(--dim);text-align:center;padding:.8rem">Loading friend stats…</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1092,70 +1111,56 @@ function showAdminScreen(){
 // ═══════════════════════════════════════════════════
 async function fetchLcStats(username){
   if(!username) return null;
-
-  // Primary: LeetCode GraphQL via corsproxy (most direct possible)
+  // Proxy 1: alfa-leetcode-api
   try{
-    const query = {
-      query: `query userProfile($username: String!) {
-        matchedUser(username: $username) {
-          submitStats { acSubmissionNum { difficulty count } }
-          profile { ranking }
-        }
-      }`,
-      variables: { username }
-    };
-    const res = await fetch('https://corsproxy.io/?https://leetcode.com/graphql', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Referer': 'https://leetcode.com' },
-      body: JSON.stringify(query),
-      signal: AbortSignal.timeout(12000)
-    });
-    if(res.ok){
-      const d = await res.json();
-      const ac = d?.data?.matchedUser?.submitStats?.acSubmissionNum || [];
-      const easy   = ac.find(x=>x.difficulty==='Easy')?.count   || 0;
-      const medium = ac.find(x=>x.difficulty==='Medium')?.count || 0;
-      const hard   = ac.find(x=>x.difficulty==='Hard')?.count   || 0;
-      if(easy||medium||hard){
-        const ranking = d?.data?.matchedUser?.profile?.ranking || null;
-        return {easy, medium, hard, total:easy+medium+hard, ranking, acceptanceRate:null, recentSubmissions:[]};
-      }
-    }
-  }catch(e){}
-
-  // Fallback 1: alfa-leetcode-api
-  try{
-    const [solvedRes, profileRes] = await Promise.allSettled([
-      fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`, {signal:AbortSignal.timeout(15000)}),
-      fetch(`https://alfa-leetcode-api.onrender.com/${username}`,        {signal:AbortSignal.timeout(15000)})
+    const [solvedRes, profileRes, subRes] = await Promise.allSettled([
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`,   {signal:AbortSignal.timeout(10000)}),
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}`,           {signal:AbortSignal.timeout(10000)}),
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}/submission`,{signal:AbortSignal.timeout(10000)})
     ]);
-    let easy=0,medium=0,hard=0,ranking=null,acceptanceRate=null;
+    let easy=0, medium=0, hard=0, ranking=null, acceptanceRate=null, recentSubmissions=[];
     if(solvedRes.status==='fulfilled'&&solvedRes.value.ok){
       const d=await solvedRes.value.json();
       if(d.easySolved!==undefined){ easy=d.easySolved||0; medium=d.mediumSolved||0; hard=d.hardSolved||0; }
     }
     if(profileRes.status==='fulfilled'&&profileRes.value.ok){
       const d=await profileRes.value.json();
-      ranking=d.ranking||null;
-      acceptanceRate=d.acceptanceRate?parseFloat(d.acceptanceRate).toFixed(1):null;
+      if(d.ranking) ranking=d.ranking;
+      if(d.acceptanceRate!=null) acceptanceRate=parseFloat(d.acceptanceRate).toFixed(1);
+      if(!easy&&d.totalSolved){
+        const ac=d.submitStats?.acSubmissionNum||[];
+        easy  =ac.find(x=>x.difficulty==='Easy')?.count||0;
+        medium=ac.find(x=>x.difficulty==='Medium')?.count||0;
+        hard  =ac.find(x=>x.difficulty==='Hard')?.count||0;
+      }
     }
-    if(easy||medium||hard) return {easy,medium,hard,total:easy+medium+hard,ranking,acceptanceRate,recentSubmissions:[]};
-  }catch(e){}
+    if(subRes.status==='fulfilled'&&subRes.value.ok){
+      const d=await subRes.value.json();
+      const list=d.submission||d.recentSubmissionList||[];
+      recentSubmissions=list.slice(0,5).map(s=>({
+        title:s.title||s.titleSlug||'—',
+        status:s.statusDisplay||s.status||'—',
+        lang:s.lang||'',
+        time:s.timestamp?new Date(parseInt(s.timestamp)*1000).toLocaleDateString():''
+      }));
+    }
+    if(easy||medium||hard) return {easy,medium,hard,total:easy+medium+hard,ranking,acceptanceRate,recentSubmissions};
+  } catch(e){}
 
-  // Fallback 2: herokuapp
+  // Proxy 2
   try{
     const res=await fetch(`https://leetcode-stats-api.herokuapp.com/${username}`,{signal:AbortSignal.timeout(10000)});
     if(res.ok){
       const d=await res.json();
       if(d.status==='success'||d.easySolved!==undefined){
-        const e=d.easySolved??0,m=d.mediumSolved??0,h=d.hardSolved??0;
+        const e=d.easySolved??0, m=d.mediumSolved??0, h=d.hardSolved??0;
         return {easy:e,medium:m,hard:h,total:e+m+h,ranking:d.ranking||null,acceptanceRate:d.acceptanceRate?parseFloat(d.acceptanceRate).toFixed(1):null,recentSubmissions:[]};
       }
     }
-  }catch(e){}
-
+  } catch(e){}
   return null;
 }
+
 async function refreshLC(){
   if(!userLcId){ setLcDot('dim'); return; }
   setLcDot('loading');
@@ -1650,3 +1655,135 @@ function toast(msg){
 </script>
 </body>
 </html>
+<script>
+// ═══════════════════════════════════════════════════
+//  FRIENDS LC TRACKER
+// ═══════════════════════════════════════════════════
+
+let friendsList = [
+  { username: 'ramyaa_2006',  stats: null, loading: false, error: false },
+  { username: 'jane_glynnis', stats: null, loading: false, error: false },
+  // Add your 2 extra friends below — just replace the empty strings with usernames
+  // { username: 'friend3username', stats: null, loading: false, error: false },
+  // { username: 'friend4username', stats: null, loading: false, error: false },
+];
+
+async function fetchFriendStats(username) {
+  if (!username) return null;
+  try {
+    const res = await fetch('https://corsproxy.io/?https://leetcode.com/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Referer': 'https://leetcode.com' },
+      body: JSON.stringify({
+        query: `query($u:String!){matchedUser(username:$u){submitStats{acSubmissionNum{difficulty count}}profile{ranking}}}`,
+        variables: { u: username }
+      }),
+      signal: AbortSignal.timeout(12000)
+    });
+    if (res.ok) {
+      const d = await res.json();
+      const ac = d?.data?.matchedUser?.submitStats?.acSubmissionNum || [];
+      const easy   = ac.find(x => x.difficulty === 'Easy')?.count   || 0;
+      const medium = ac.find(x => x.difficulty === 'Medium')?.count || 0;
+      const hard   = ac.find(x => x.difficulty === 'Hard')?.count   || 0;
+      if (ac.length) return { easy, medium, hard, total: easy+medium+hard, ranking: d?.data?.matchedUser?.profile?.ranking || null };
+    }
+  } catch(e) {}
+  try {
+    const res = await fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`, { signal: AbortSignal.timeout(15000) });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.easySolved !== undefined)
+        return { easy: d.easySolved||0, medium: d.mediumSolved||0, hard: d.hardSolved||0, total: (d.easySolved||0)+(d.mediumSolved||0)+(d.hardSolved||0), ranking: null };
+    }
+  } catch(e) {}
+  try {
+    const res = await fetch(`https://leetcode-stats-api.herokuapp.com/${username}`, { signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.status === 'success' || d.easySolved !== undefined)
+        return { easy: d.easySolved??0, medium: d.mediumSolved??0, hard: d.hardSolved??0, total: (d.easySolved??0)+(d.mediumSolved??0)+(d.hardSolved??0), ranking: d.ranking||null };
+    }
+  } catch(e) {}
+  return null;
+}
+
+function renderFriendsGrid() {
+  const grid = document.getElementById('friends-grid');
+  if (!grid) return;
+  const active = friendsList.filter(f => f.username);
+  if (!active.length) { grid.innerHTML = '<div style="font-size:.75rem;color:var(--dim);text-align:center;padding:.8rem">No friends added.</div>'; return; }
+  const sorted = [...active].sort((a, b) => (b.stats?.total || 0) - (a.stats?.total || 0));
+  grid.innerHTML = sorted.map((f, i) => {
+    const medal  = i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1);
+    const total  = f.stats?.total  ?? '—';
+    const easy   = f.stats?.easy   ?? '—';
+    const med    = f.stats?.medium ?? '—';
+    const hard   = f.stats?.hard   ?? '—';
+    const rank   = f.stats?.ranking ? '#'+Number(f.stats.ranking).toLocaleString() : '—';
+    const dotColor = f.loading?'var(--muted)':f.error?'var(--red)':f.stats?'var(--teal)':'var(--dim)';
+    const status   = f.loading?'⏳ fetching…':f.error?'✗ could not fetch':f.stats?'✓ live':'—';
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.65rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="min-width:150px;flex-shrink:0">
+        <div style="font-size:.82rem;font-weight:700;color:var(--text)">${medal} ${f.username}</div>
+        <a href="https://leetcode.com/u/${f.username}/" target="_blank" style="font-size:.6rem;color:var(--accent);text-decoration:none">leetcode.com/u/${f.username}</a>
+        <div style="font-size:.6rem;color:${dotColor};margin-top:.15rem">${status}</div>
+      </div>
+      <div style="display:flex;gap:1.2rem;flex:1;justify-content:center;flex-wrap:wrap">
+        <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--text)">${total}</div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase">Total</div></div>
+        <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--teal)">${easy}</div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase">Easy</div></div>
+        <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--orange)">${med}</div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase">Med</div></div>
+        <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--red)">${hard}</div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase">Hard</div></div>
+        <div style="text-align:center"><div style="font-size:.9rem;font-weight:600;font-family:var(--mono);color:var(--accent)">${rank}</div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase">Rank</div></div>
+      </div>
+      <button onclick="removeFriend('${f.username}')" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-size:.65rem;padding:.25rem .55rem;border-radius:5px;cursor:pointer">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function refreshFriend(username) {
+  const f = friendsList.find(x => x.username === username);
+  if (!f) return;
+  f.loading = true; f.error = false; renderFriendsGrid();
+  const stats = await fetchFriendStats(username);
+  f.loading = false;
+  if (stats) { f.stats = stats; f.error = false; } else { f.error = true; }
+  renderFriendsGrid();
+}
+
+async function refreshAllFriends() {
+  await Promise.all(friendsList.filter(f => f.username).map(f => refreshFriend(f.username)));
+}
+
+function addFriend() {
+  const input = document.getElementById('friend-add-input');
+  const raw = (input?.value || '').trim();
+  if (!raw) { toast('Paste a LeetCode profile URL'); return; }
+  const username = extractLcUsername(raw);
+  if (!username) { toast('Could not extract username'); return; }
+  if (friendsList.find(f => f.username === username)) { toast('Already tracking ' + username); input.value=''; return; }
+  friendsList.push({ username, stats: null, loading: false, error: false });
+  input.value = '';
+  renderFriendsGrid();
+  refreshFriend(username);
+  toast('Added ' + username);
+}
+
+function removeFriend(username) {
+  friendsList = friendsList.filter(f => f.username !== username);
+  renderFriendsGrid();
+  toast('Removed ' + username);
+}
+
+// Hook into admin load — auto-fetch friends when admin dashboard opens
+(function() {
+  const orig = window.loadAllStudents;
+  if (typeof orig === 'function') {
+    window.loadAllStudents = async function() {
+      await orig.apply(this, arguments);
+      renderFriendsGrid();
+      refreshAllFriends();
+    };
+  }
+})();
+</script>
