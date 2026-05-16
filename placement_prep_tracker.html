@@ -1090,47 +1090,47 @@ function showAdminScreen(){
 // ═══════════════════════════════════════════════════
 //  LEETCODE FETCH
 // ═══════════════════════════════════════════════════
-async function fetchLcStats(username) {
-  if (!username) return null;
+async function fetchLcStats(username){
+  if(!username) return null;
 
-  // Proxy 1: alfa-leetcode-api (onrender — may be slow on cold start)
-  try {
-    const res = await fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`, { signal: AbortSignal.timeout(15000) });
-    if (res.ok) {
-      const d = await res.json();
-      if (d.easySolved !== undefined) {
-        // fetch profile separately for ranking
-        let ranking = null, acceptanceRate = null, recentSubmissions = [];
-        try {
-          const p = await fetch(`https://alfa-leetcode-api.onrender.com/${username}`, { signal: AbortSignal.timeout(10000) });
-          if (p.ok) { const pd = await p.json(); ranking = pd.ranking || null; acceptanceRate = pd.acceptanceRate ? parseFloat(pd.acceptanceRate).toFixed(1) : null; }
-        } catch(e) {}
-        return { easy: d.easySolved||0, medium: d.mediumSolved||0, hard: d.hardSolved||0, total: (d.easySolved||0)+(d.mediumSolved||0)+(d.hardSolved||0), ranking, acceptanceRate, recentSubmissions };
+  // Proxy 1: alfa-leetcode-api (free Render — slow cold start, increased timeout)
+  try{
+    const solvedRes = await fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`, {signal:AbortSignal.timeout(15000)});
+    if(solvedRes.ok){
+      const d = await solvedRes.value.json();
+      if(d.easySolved!==undefined){
+        let ranking=null, acceptanceRate=null;
+        try{
+          const p=await fetch(`https://alfa-leetcode-api.onrender.com/${username}`,{signal:AbortSignal.timeout(10000)});
+          if(p.ok){ const pd=await p.json(); ranking=pd.ranking||null; acceptanceRate=pd.acceptanceRate?parseFloat(pd.acceptanceRate).toFixed(1):null; }
+        }catch(e){}
+        return {easy:d.easySolved||0,medium:d.mediumSolved||0,hard:d.hardSolved||0,total:(d.easySolved||0)+(d.mediumSolved||0)+(d.hardSolved||0),ranking,acceptanceRate,recentSubmissions:[]};
       }
     }
-  } catch(e) {}
+  }catch(e){}
 
-  // Proxy 2: leetcode-stats-api (herokuapp)
-  try {
-    const res = await fetch(`https://leetcode-stats-api.herokuapp.com/${username}`, { signal: AbortSignal.timeout(10000) });
-    if (res.ok) {
-      const d = await res.json();
-      if (d.status === 'success' || d.easySolved !== undefined) {
-        return { easy: d.easySolved??0, medium: d.mediumSolved??0, hard: d.hardSolved??0, total: (d.easySolved??0)+(d.mediumSolved??0)+(d.hardSolved??0), ranking: d.ranking||null, acceptanceRate: d.acceptanceRate ? parseFloat(d.acceptanceRate).toFixed(1) : null, recentSubmissions: [] };
+  // Proxy 2: leetcode-stats-api herokuapp
+  try{
+    const res=await fetch(`https://leetcode-stats-api.herokuapp.com/${username}`,{signal:AbortSignal.timeout(10000)});
+    if(res.ok){
+      const d=await res.json();
+      if(d.status==='success'||d.easySolved!==undefined){
+        const e=d.easySolved??0, m=d.mediumSolved??0, h=d.hardSolved??0;
+        return {easy:e,medium:m,hard:h,total:e+m+h,ranking:d.ranking||null,acceptanceRate:d.acceptanceRate?parseFloat(d.acceptanceRate).toFixed(1):null,recentSubmissions:[]};
       }
     }
-  } catch(e) {}
+  }catch(e){}
 
-  // Proxy 3: leetcode.cards API (reliable fallback)
-  try {
-    const res = await fetch(`https://leetcode-api-fuz5.vercel.app/api/user/${username}`, { signal: AbortSignal.timeout(10000) });
-    if (res.ok) {
-      const d = await res.json();
-      if (d.totalSolved !== undefined) {
-        return { easy: d.easySolved||0, medium: d.mediumSolved||0, hard: d.hardSolved||0, total: d.totalSolved||0, ranking: d.ranking||null, acceptanceRate: null, recentSubmissions: [] };
+  // Proxy 3: Vercel-based fallback (most reliable)
+  try{
+    const res=await fetch(`https://leetcode-api-fuz5.vercel.app/api/user/${username}`,{signal:AbortSignal.timeout(10000)});
+    if(res.ok){
+      const d=await res.json();
+      if(d.totalSolved!==undefined){
+        return {easy:d.easySolved||0,medium:d.mediumSolved||0,hard:d.hardSolved||0,total:d.totalSolved||0,ranking:d.ranking||null,acceptanceRate:null,recentSubmissions:[]};
       }
     }
-  } catch(e) {}
+  }catch(e){}
 
   return null;
 }
