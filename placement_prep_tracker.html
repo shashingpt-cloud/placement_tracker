@@ -1111,12 +1111,52 @@ function showAdminScreen(){
 // ═══════════════════════════════════════════════════
 async function fetchLcStats(username){
   if(!username) return null;
-  // Proxy 1: alfa-leetcode-api
+
+  // PRIMARY: LeetCode's own GraphQL API via corsproxy (most direct possible)
+  try{
+    const res = await fetch('https://corsproxy.io/?url=https://leetcode.com/graphql',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Origin':'https://leetcode.com','Referer':'https://leetcode.com'},
+      body:JSON.stringify({
+        query:`query combined($u:String!){
+          matchedUser(username:$u){
+            profile{ ranking }
+            submitStats{ acSubmissionNum{ difficulty count } }
+          }
+          recentAcSubmissionList(username:$u, limit:5){
+            title lang timestamp
+          }
+        }`,
+        variables:{u:username}
+      }),
+      signal:AbortSignal.timeout(14000)
+    });
+    if(res.ok){
+      const d=await res.json();
+      const ac=d?.data?.matchedUser?.submitStats?.acSubmissionNum||[];
+      const easy  =ac.find(x=>x.difficulty==='Easy')?.count||0;
+      const medium=ac.find(x=>x.difficulty==='Medium')?.count||0;
+      const hard  =ac.find(x=>x.difficulty==='Hard')?.count||0;
+      if(ac.length){
+        const subs=(d?.data?.recentAcSubmissionList||[]).map(s=>({
+          title:s.title||'—',
+          status:'Accepted',
+          lang:s.lang||'',
+          time:s.timestamp?new Date(parseInt(s.timestamp)*1000).toLocaleDateString():''
+        }));
+        return {easy,medium,hard,total:easy+medium+hard,
+          ranking:d?.data?.matchedUser?.profile?.ranking||null,
+          acceptanceRate:null,recentSubmissions:subs};
+      }
+    }
+  }catch(e){}
+
+  // FALLBACK 1: alfa-leetcode-api (Render free — slow cold start, raised timeout)
   try{
     const [solvedRes, profileRes, subRes] = await Promise.allSettled([
-      fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`,   {signal:AbortSignal.timeout(10000)}),
-      fetch(`https://alfa-leetcode-api.onrender.com/${username}`,           {signal:AbortSignal.timeout(10000)}),
-      fetch(`https://alfa-leetcode-api.onrender.com/${username}/submission`,{signal:AbortSignal.timeout(10000)})
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}/solved`,   {signal:AbortSignal.timeout(18000)}),
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}`,           {signal:AbortSignal.timeout(18000)}),
+      fetch(`https://alfa-leetcode-api.onrender.com/${username}/submission`,{signal:AbortSignal.timeout(18000)})
     ]);
     let easy=0, medium=0, hard=0, ranking=null, acceptanceRate=null, recentSubmissions=[];
     if(solvedRes.status==='fulfilled'&&solvedRes.value.ok){
@@ -1147,7 +1187,7 @@ async function fetchLcStats(username){
     if(easy||medium||hard) return {easy,medium,hard,total:easy+medium+hard,ranking,acceptanceRate,recentSubmissions};
   } catch(e){}
 
-  // Proxy 2
+  // FALLBACK 2: leetcode-stats herokuapp
   try{
     const res=await fetch(`https://leetcode-stats-api.herokuapp.com/${username}`,{signal:AbortSignal.timeout(10000)});
     if(res.ok){
@@ -1665,7 +1705,7 @@ let friendsList = [
   { username: 'jane_glynnis', stats: null, loading: false, error: false },
   // Add your 2 extra friends below — just replace the empty strings with usernames
   { username: 'KAVISRIBABU', stats: null, loading: false, error: false },
-  // { username: 'friend4username', stats: null, loading: false, error: false },
+  { username: 'ShiyalinJohn', stats: null, loading: false, error: false },
 ];
 
 async function fetchFriendStats(username) {
