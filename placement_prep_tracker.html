@@ -1415,7 +1415,7 @@ async function doReset(){
 async function loadAllStudents(){
   const tbody=document.getElementById('students-tbody');
   tbody.innerHTML='<tr class="loading-row"><td colspan="8">Loading students...</td></tr>';
-
+  console.log("Loading Students..");
   try{
     const snap = await db.collection('users').get();
     allStudentsData = [];
