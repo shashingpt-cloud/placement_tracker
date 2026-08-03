@@ -901,8 +901,6 @@ async function doLogin(){
   setAuthLoading('btn-login', true); setAuthErr('');
   try{ await auth.signInWithEmailAndPassword(email, pass); }
   catch(e){ setAuthErr(friendlyAuthError(e.code)); setAuthLoading('btn-login', false); }
-  console.log("Logged in:", auth.currentUser.email);
-  console.log("UID:", auth.currentUser.uid);
 }
 
 async function doRegister(){
@@ -1019,8 +1017,6 @@ async function loadUserData(){
       if(data.isAdmin)    isAdmin  = true;
     }
   } catch(e){ console.warn('Load error',e); }
-  console.log(doc.data());
-  console.log("isAdmin =", doc.data().isAdmin);
 }
 
 function persist(){ saveProgress(); }
@@ -1054,7 +1050,6 @@ window.addEventListener('DOMContentLoaded', async ()=>{
       show('screen-loading', false);
       
       if(isAdmin){
-        console.log("opening admin screen")
         showAdminScreen();
       } else if(!userLcId){
         show('screen-lc', true);
