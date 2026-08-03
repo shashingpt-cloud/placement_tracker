@@ -1455,6 +1455,9 @@ async function loadAllStudents(){
         }));
     await refreshAllFriends();
   } catch(e){
+    console.error("Firestore Error:", e);
+    console.error("Code:", e.code);
+    console.error("Message:", e.message);
     tbody.innerHTML=`<tr class="loading-row"><td colspan="8">Error loading data: ${e.message}</td></tr>`;
   }
 }
