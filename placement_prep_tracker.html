@@ -1412,54 +1412,109 @@ async function doReset(){
 // ═══════════════════════════════════════════════════
 //  ADMIN — LOAD ALL STUDENTS
 // ═══════════════════════════════════════════════════
-async function loadAllStudents(){
-  const tbody=document.getElementById('students-tbody');
-  tbody.innerHTML='<tr class="loading-row"><td colspan="8">Loading students...</td></tr>';
-  console.log("Loading Students..");
-  try{
-    const snap = await db.collection('users').get();
-    allStudentsData = [];
+async function loadAllStudents() {
+    const tbody = document.getElementById('students-tbody');
+    tbody.innerHTML = '<tr class="loading-row"><td colspan="8">Loading students...</td></tr>';
 
-    snap.forEach(doc=>{
-      const data=doc.data();
-      if(data.isAdmin) return; // skip admin accounts in table
-      allStudentsData.push({uid:doc.id,...data});
-    });
+    console.log("Loading Students..");
 
-    // Compute aggregates
-    const today=new Date().toISOString().split('T')[0];
-    let activeToday=0, aptSum=0, dsaSum=0, count=0;
-    allStudentsData.forEach(s=>{
-      const prog=s.progress||{};
-      const days=prog.days||{};
-      if(days[today]?.done) activeToday++;
-      aptSum+=calcAptPct(prog.checked||{});
-      dsaSum+=calcDsaPct(prog.checked||{});
-      count++;
-    });
+    try {
 
-    document.getElementById('admin-total-users').textContent=count;
-    document.getElementById('admin-active-today').textContent=activeToday;
-    document.getElementById('admin-avg-apt').textContent=count?Math.round(aptSum/count)+'%':'—';
-    document.getElementById('admin-avg-dsa').textContent=count?Math.round(dsaSum/count)+'%':'—';
+        const snap = await db.collection('users').get();
+        allStudentsData = [];
 
-    renderStudentsTable(allStudentsData);
-    friendsList = allStudentsData
-        .filter(s => s.leetcodeId)
-        .map(s => ({
-            uid: s.uid,
-            username: s.leetcodeId,
-            stats: s.lcStats || null,
-            loading: false,
-            error: false
-        }));
-    await refreshAllFriends();
-  } catch(e){
-    console.error("Firestore Error:", e);
-    console.error("Code:", e.code);
-    console.error("Message:", e.message);
-    tbody.innerHTML=`<tr class="loading-row"><td colspan="8">Error loading data: ${e.message}</td></tr>`;
-  }
+        snap.forEach(doc => {
+            const data = doc.data();
+
+            if (data.isAdmin) return;
+
+            allStudentsData.push({
+                uid: doc.id,
+                ...data
+            });
+        });
+
+        // ------------------------
+        // Compute Dashboard Stats
+        // ------------------------
+
+        const today = new Date().toISOString().split('T')[0];
+
+        let activeToday = 0;
+        let aptSum = 0;
+        let dsaSum = 0;
+        let count = 0;
+
+        allStudentsData.forEach(s => {
+
+            const prog = s.progress || {};
+            const days = prog.days || {};
+
+            if (days[today]?.done) activeToday++;
+
+            aptSum += calcAptPct(prog.checked || {});
+            dsaSum += calcDsaPct(prog.checked || {});
+            count++;
+
+        });
+
+        document.getElementById('admin-total-users').textContent = count;
+        document.getElementById('admin-active-today').textContent = activeToday;
+        document.getElementById('admin-avg-apt').textContent = count ? Math.round(aptSum / count) + '%' : '—';
+        document.getElementById('admin-avg-dsa').textContent = count ? Math.round(dsaSum / count) + '%' : '—';
+
+        renderStudentsTable(allStudentsData);
+
+        // ------------------------
+        // Build Friends List
+        // ------------------------
+
+        friendsList = allStudentsData
+            .filter(s => s.leetcodeId)
+            .map(s => ({
+                uid: s.uid,
+                username: s.leetcodeId,
+                stats: s.lcStats || null,
+                fetchedAt: s.fetchedAt || 0,
+                loading: false,
+                error: false
+            }));
+
+        const CACHE_TIME = 24 * 60 * 60 * 1000;
+
+        // Refresh only stale users
+        for (const friend of friendsList) {
+
+            if (
+                friend.stats &&
+                friend.fetchedAt &&
+                (Date.now() - friend.fetchedAt) < CACHE_TIME
+            ) {
+                console.log("Using cached stats:", friend.username);
+                continue;
+            }
+
+            await refreshFriend(friend.uid, friend.username);
+
+            // Wait 1 second before next request
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        renderFriendsGrid();
+
+    } catch (e) {
+
+        console.error("Firestore Error:", e);
+        console.error("Code:", e.code);
+        console.error("Message:", e.message);
+
+        tbody.innerHTML =
+            `<tr class="loading-row">
+                <td colspan="8">
+                    Error loading data: ${e.message}
+                </td>
+            </tr>`;
+    }
 }
 
 function renderStudentsTable(students){
@@ -1716,24 +1771,37 @@ async function fetchFriendStats(uid, username) {
   // -----------------------------
   // Check Firestore Cache
   // -----------------------------
+
+  let cachedStats = null;
+
   try {
+
     const doc = await db.collection("users").doc(uid).get();
 
     if (doc.exists) {
-      const data = doc.data();
 
-      if (
-        data.lcStats &&
-        data.fetchedAt &&
-        (Date.now() - data.fetchedAt) < CACHE_TIME
-      ) {
-        console.log("Loaded from Firestore cache:", username);
-        return data.lcStats;
-      }
+        const data = doc.data();
+
+        // Keep old cache as backup
+        cachedStats = data.lcStats || null;
+
+        // Use cache if it is less than 24 hours old
+        if (
+            data.lcStats &&
+            data.fetchedAt &&
+            (Date.now() - data.fetchedAt) < CACHE_TIME
+        ) {
+            console.log("Loaded from Firestore cache:", username);
+            return data.lcStats;
+        }
+
     }
+
   } catch (e) {
+
     console.error("Cache Read Error:", e);
-  }
+
+}
 
   // -----------------------------
   // Fetch from API
@@ -1810,18 +1878,45 @@ function renderFriendsGrid() {
   }).join('');
 }
 
-async function refreshFriend(username) {
-  const f = friendsList.find(x => x.username === username);
-  if (!f) return;
-  f.loading = true; f.error = false; renderFriendsGrid();
-  const stats = await fetchFriendStats(f.uid, username);
-  f.loading = false;
-  if (stats) { f.stats = stats; f.error = false; } else { f.error = true; }
-  renderFriendsGrid();
+async function refreshFriend(uid, username) {
+
+    const f = friendsList.find(friend => friend.uid === uid);
+
+    if (!f) return;
+
+    f.loading = true;
+    f.error = false;
+
+    renderFriendsGrid();
+
+    const stats = await fetchFriendStats(uid, username);
+
+    f.loading = false;
+
+    if (stats) {
+
+        f.stats = stats;
+
+        // Keep fetched time updated
+        f.fetchedAt = Date.now();
+
+        f.error = false;
+
+    } else {
+
+        f.error = true;
+
+    }
+
+    renderFriendsGrid();
 }
 
 async function refreshAllFriends() {
-  await Promise.all(friendsList.filter(f => f.username).map(f => refreshFriend(f.username)));
+    await Promise.all(
+        friendsList.map(f =>
+            refreshFriend(f.uid, f.username)
+        )
+    );
 }
 
 function addFriend() {
