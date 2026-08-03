@@ -1117,47 +1117,33 @@ function showAdminScreen(){
 // ═══════════════════════════════════════════════════
 //  LEETCODE FETCH
 // ═══════════════════════════════════════════════════
-async function fetchLcStats(username){
-  if(!username) return null;
+async function fetchLcStats(username) {
+  if (!username) return null;
 
-  // PRIMARY: LeetCode's own GraphQL API via corsproxy (most direct possible)
-  try{
-    const res = await fetch('https://corsproxy.io/?url=https://leetcode.com/graphql',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Origin':'https://leetcode.com','Referer':'https://leetcode.com'},
-      body:JSON.stringify({
-        query:`query combined($u:String!){
-          matchedUser(username:$u){
-            profile{ ranking }
-            submitStats{ acSubmissionNum{ difficulty count } }
-          }
-          recentAcSubmissionList(username:$u, limit:5){
-            title lang timestamp
-          }
-        }`,
-        variables:{u:username}
-      }),
-      signal:AbortSignal.timeout(14000)
+  // PRIMARY: Your Vercel API
+  try {
+    const res = await fetch(`/api/leetcode?username=${username}`, {
+      signal: AbortSignal.timeout(15000)
     });
-    if(res.ok){
-      const d=await res.json();
-      const ac=d?.data?.matchedUser?.submitStats?.acSubmissionNum||[];
-      const easy  =ac.find(x=>x.difficulty==='Easy')?.count||0;
-      const medium=ac.find(x=>x.difficulty==='Medium')?.count||0;
-      const hard  =ac.find(x=>x.difficulty==='Hard')?.count||0;
-      if(d?.data?.matchedUser){
-        const subs=(d?.data?.recentAcSubmissionList||[]).map(s=>({
-          title:s.title||'—',
-          status:'Accepted',
-          lang:s.lang||'',
-          time:s.timestamp?new Date(parseInt(s.timestamp)*1000).toLocaleDateString():''
-        }));
-        return {easy,medium,hard,total:easy+medium+hard,
-          ranking:d?.data?.matchedUser?.profile?.ranking||null,
-          acceptanceRate:null,recentSubmissions:subs};
-      }
+
+    if (res.ok) {
+      const d = await res.json();
+
+      return {
+        easy: d.easySolved || 0,
+        medium: d.mediumSolved || 0,
+        hard: d.hardSolved || 0,
+        total: (d.easySolved || 0) + (d.mediumSolved || 0) + (d.hardSolved || 0),
+        ranking: d.ranking || null,
+        acceptanceRate: d.acceptanceRate
+          ? parseFloat(d.acceptanceRate).toFixed(1)
+          : null,
+        recentSubmissions: d.recentSubmissions || []
+      };
     }
-  }catch(e){}
+  } catch (e) {
+    console.error("Primary API failed:", e);
+  }
 
   // FALLBACK 1: alfa-leetcode-api (Render free — slow cold start, raised timeout)
   try{
@@ -1458,6 +1444,16 @@ async function loadAllStudents(){
     document.getElementById('admin-avg-dsa').textContent=count?Math.round(dsaSum/count)+'%':'—';
 
     renderStudentsTable(allStudentsData);
+    friendsList = allStudentsData
+        .filter(s => s.leetcodeId)
+        .map(s => ({
+            uid: s.uid,
+            username: s.leetcodeId,
+            stats: s.lcStats || null,
+            loading: false,
+            error: false
+        }));
+    await refreshAllFriends();
   } catch(e){
     tbody.innerHTML=`<tr class="loading-row"><td colspan="8">Error loading data: ${e.message}</td></tr>`;
   }
@@ -1708,52 +1704,73 @@ function toast(msg){
 //  FRIENDS LC TRACKER
 // ═══════════════════════════════════════════════════
 
-let friendsList = [
-  { username: 'ramyaa_2006',  stats: null, loading: false, error: false },
-  { username: 'jane_glynnis', stats: null, loading: false, error: false },
-  // Add your 2 extra friends below — just replace the empty strings with usernames
-  { username: 'KAVISRIBABU', stats: null, loading: false, error: false },
-  { username: 'ShiyalinJohn', stats: null, loading: false, error: false },
-,
-];
-
-async function fetchFriendStats(username) {
+let friendsList = [];
+async function fetchFriendStats(uid, username) {
   if (!username) return null;
+
+  const CACHE_TIME = 24 * 60 * 60 * 1000; // 24 hours
+
+  // -----------------------------
+  // Check Firestore Cache
+  // -----------------------------
   try {
-    const res = await fetch('https://corsproxy.io/?https://leetcode.com/graphql', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Referer': 'https://leetcode.com' },
-      body: JSON.stringify({
-        query: `query($u:String!){matchedUser(username:$u){submitStats{acSubmissionNum{difficulty count}}profile{ranking}}}`,
-        variables: { u: username }
-      }),
-      signal: AbortSignal.timeout(12000)
+    const doc = await db.collection("users").doc(uid).get();
+
+    if (doc.exists) {
+      const data = doc.data();
+
+      if (
+        data.lcStats &&
+        data.fetchedAt &&
+        (Date.now() - data.fetchedAt) < CACHE_TIME
+      ) {
+        console.log("Loaded from Firestore cache:", username);
+        return data.lcStats;
+      }
+    }
+  } catch (e) {
+    console.error("Cache Read Error:", e);
+  }
+
+  // -----------------------------
+  // Fetch from API
+  // -----------------------------
+  try {
+    const res = await fetch(`/api/leetcode?username=${username}`, {
+      signal: AbortSignal.timeout(15000)
     });
+
     if (res.ok) {
       const d = await res.json();
-      const ac = d?.data?.matchedUser?.submitStats?.acSubmissionNum || [];
-      const easy   = ac.find(x => x.difficulty === 'Easy')?.count   || 0;
-      const medium = ac.find(x => x.difficulty === 'Medium')?.count || 0;
-      const hard   = ac.find(x => x.difficulty === 'Hard')?.count   || 0;
-      if(d?.data?.matchedUser) return { easy, medium, hard, total: easy+medium+hard, ranking: d?.data?.matchedUser?.profile?.ranking || null };
+
+      const stats = {
+        easy: d.easySolved || 0,
+        medium: d.mediumSolved || 0,
+        hard: d.hardSolved || 0,
+        total:
+          (d.easySolved || 0) +
+          (d.mediumSolved || 0) +
+          (d.hardSolved || 0),
+        ranking: d.ranking || null
+      };
+
+      // Save to Firestore
+      await db.collection("users").doc(uid).set(
+        {
+          lcStats: stats,
+          fetchedAt: Date.now()
+        },
+        { merge: true }
+      );
+
+      console.log("Fetched & Cached:", username);
+
+      return stats;
     }
-  } catch(e) {}
-  try {
-    const res = await fetch(`/api/leetcode?username=${username}`, { signal: AbortSignal.timeout(15000) });
-    if (res.ok) {
-      const d = await res.json();
-      if (d.easySolved !== undefined)
-        return { easy: d.easySolved||0, medium: d.mediumSolved||0, hard: d.hardSolved||0, total: (d.easySolved||0)+(d.mediumSolved||0)+(d.hardSolved||0), ranking: null };
-    }
-  } catch(e) {}
-  try {
-    const res = await fetch(`https://leetcode-stats-api.herokuapp.com/${username}`, { signal: AbortSignal.timeout(10000) });
-    if (res.ok) {
-      const d = await res.json();
-      if (d.status === 'success' || d.easySolved !== undefined)
-        return { easy: d.easySolved??0, medium: d.mediumSolved??0, hard: d.hardSolved??0, total: (d.easySolved??0)+(d.mediumSolved??0)+(d.hardSolved??0), ranking: d.ranking||null };
-    }
-  } catch(e) {}
+  } catch (e) {
+    console.error("API Error:", e);
+  }
+
   return null;
 }
 
@@ -1794,7 +1811,7 @@ async function refreshFriend(username) {
   const f = friendsList.find(x => x.username === username);
   if (!f) return;
   f.loading = true; f.error = false; renderFriendsGrid();
-  const stats = await fetchFriendStats(username);
+  const stats = await fetchFriendStats(f.uid, username);
   f.loading = false;
   if (stats) { f.stats = stats; f.error = false; } else { f.error = true; }
   renderFriendsGrid();
