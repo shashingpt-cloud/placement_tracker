@@ -1047,16 +1047,24 @@ window.addEventListener('DOMContentLoaded', async ()=>{
       show('screen-loading', true);
       setLoadingText('loading your data...');
       await loadUserData();
+
+      console.log("UID:", currentUser.uid);
+      console.log("Email:", currentUser.email);
+      console.log("isAdmin after load:", isAdmin);
+
       show('screen-loading', false);
-      
-      if(isAdmin){
-        showAdminScreen();
-      } else if(!userLcId){
-        show('screen-lc', true);
+
+      if (isAdmin) {
+          console.log("Calling showAdminScreen()");
+          showAdminScreen();
+      } else if (!userLcId) {
+          console.log("Opening LeetCode screen");
+          show('screen-lc', true);
       } else {
-        showStudentApp();
-        refreshLC();
-      }
+          console.log("Opening Student App");
+          showStudentApp();
+          refreshLC();
+    }
     } else {
       currentUser = null; isAdmin = false; userLcId = null;
       state = { aptWeek:1, aptDay:1, dsaWeek:1, dsaDay:1, checked:{}, days:{}, lcStats:null };
